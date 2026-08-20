@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<link rel="icon" type="image/webp" href="/ic_launcher_round.webp"/>
+<title>Admin — FaceDocs</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#080c14;--card:#111827;--card2:#151d2f;--border:#1f2937;--border2:#243049;--accent:#3b82f6;--accent2:#60a5fa;--text:#e5e7eb;--muted:#9ca3af;--green:#22c55e}
+body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.5}
+a{color:var(--accent2);text-decoration:none}
+a:hover{text-decoration:underline}
+.nav{
+  position:sticky;top:0;z-index:50;
+  display:flex;justify-content:space-between;align-items:center;
+  padding:14px 20px;
+  background:rgba(8,12,20,.9);
+  backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--border);
+}
+.btn{
+  border:1px solid var(--border);
+  background:var(--card);
+  color:var(--text);
+  padding:9px 14px;
+  border-radius:9px;
+  cursor:pointer;
+  font-weight:600;
+  font-size:13px;
+  transition:.15s;
+  white-space:nowrap;
+}
+.btn:hover{border-color:var(--border2);transform:translateY(-1px)}
+.btn-primary{background:linear-gradient(135deg,#2563eb,#1d4ed8);border-color:transparent;color:white;box-shadow:0 6px 16px rgba(37,99,235,.25)}
+.btn-primary:hover{box-shadow:0 8px 20px rgba(37,99,235,.35)}
+.btn-sm{padding:6px 10px;font-size:12px}
+.input{
+  width:100%;
+  background:#0b1220;
+  border:1px solid var(--border);
+  color:var(--text);
+  padding:10px 12px;
+  border-radius:9px;
+  outline:none;
+  font-size:13px;
+  transition:.15s;
+}
+.input:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.12);background:#0e1a32}
+.input::placeholder{color:#64748b}
+.card{
+  background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.015));
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:18px;
+  box-shadow:0 10px 30px rgba(0,0,0,.25);
+}
+.badge{font-size:11px;padding:4px 9px;border-radius:999px;border:1px solid var(--border);background:#0b1220;color:var(--muted);white-space:nowrap}
+.badge-green{color:#22c55e;border-color:rgba(34,197,94,.25);background:rgba(34,197,94,.08)}
+.badge-red{color:#ef4444;border-color:rgba(239,68,68,.25);background:rgba(239,68,68,.08)}
+.badge-amber{color:#f59e0b;border-color:rgba(245,158,11,.25);background:rgba(245,158,11,.08)}
+.kbd{font-family:ui-monospace,monospace;font-size:12px;background:#0b1220;border:1px solid var(--border);padding:3px 6px;border-radius:6px;word-break:break-all}
+.hidden{display:none}
+
+/* layout */
+.container{
+  max-width:1280px;
+  width:100%;
+  margin:0 auto;
+  padding:0 20px;
+}
+@media(max-width:640px){ .container{padding:0 14px} }
+
+.login{max-width:440px;margin:70px auto;padding:26px}
+.stats-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:14px;
+}
+@media(max-width:900px){ .stats-grid{grid-template-columns:1fr} }
+
+.create-grid{
+  display:grid;
+  grid-template-columns: 1.8fr 1fr 120px 150px 110px;
+  gap:10px;
+  margin-top:12px;
+  align-items:center;
+}
+@media(max-width:1100px){
+  .create-grid{grid-template-columns:1fr 1fr 1fr;}
+  .create-grid #ck-key{grid-column:1 / -1}
+}
+@media(max-width:640px){
+  .create-grid{grid-template-columns:1fr;}
+  .create-grid #ck-key{grid-column:auto}
+}
+.create-actions{
+  display:flex;
+  gap:8px;
+  margin-top:12px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+.note-row{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  flex:1;
+  min-width:200px;
+}
+@media(max-width:640px){
+  .note-row{width:100%}
+}
+
+/* tables */
+.table-wrap{
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+  margin-top:12px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  background:rgba(11,18,32,.5);
+}
+table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+  min-width:780px;
+}
+th,td{
+  padding:11px 12px;
+  border-bottom:1px solid var(--border);
+  text-align:left;
+  white-space:nowrap;
+}
+th{
+  color:var(--muted);
+  font-size:11px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  background:rgba(255,255,255,.02);
+  position:sticky;
+  top:0;
+}
+td{color:#d1d5db}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+
+/* special for narrow devices: allow table to scroll, keep card padding */
+.table-card{padding:0;overflow:hidden}
+.table-card .table-head{
+  padding:16px 18px 0 18px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+.table-card .table-wrap{
+  margin:12px 0 0 0;
+  border-left:none;
+  border-right:none;
+  border-bottom:none;
+  border-radius:0;
+}
+.api-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:14px;
+  margin-top:12px;
+}
+@media(max-width:800px){ .api-grid{grid-template-columns:1fr} }
+textarea.input{resize:vertical;min-height:96px}
+.row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+</style>
+</head>
+<body>
+<nav class="nav">
+  <div style="display:flex;gap:10px;align-items:center">
+    <a href="/" style="font-weight:800;letter-spacing:-.02em;display:flex;align-items:center;gap:8px">
+      <img src="/ic_launcher_round.webp" alt="FaceGate" style="width:28px;height:28px;border-radius:8px;object-fit:cover;background:#0a0a0a;border:1px solid #1f2937;display:block"/>
+      FaceDocs
+    </a>
+    <span class="badge">Admin</span>
+    <span id="conn" class="badge">—</span>
+  </div>
+  <div class="row" style="flex-wrap:nowrap">
+    <span id="who" style="color:var(--muted);font-size:13px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <button class="btn btn-sm" onclick="logout()">Logout</button>
+  </div>
+</nav>
+
+<div id="loading" class="login card" style="text-align:center;color:#9ca3af">Loading…</div>
+<div id="loginView" class="login card hidden">
+  <h2 style="font-size:20px;font-weight:800">Admin Login</h2>
+  <p style="color:var(--muted);font-size:13px;margin:8px 0 16px;line-height:1.5">Use VPS credentials — default <code>admin / 87877878@Kk##</code>. You can override with env <code>ADMIN_USER / ADMIN_PASS</code> on the server.</p>
+  <div style="display:flex;flex-direction:column;gap:11px">
+    <input id="u" class="input" placeholder="Username (admin)" value="admin" autocomplete="username"/>
+    <input id="p" class="input" type="password" placeholder="Password" autocomplete="current-password"/>
+    <button class="btn btn-primary" style="width:100%;padding:11px" onclick="doLogin()">Login</button>
+    <div id="loginMsg" style="font-size:13px;color:#f87171;min-height:18px"></div>
+    <div style="font-size:12px;color:var(--muted)">Health: <a href="/api/health" target="_blank">/api/health</a> • VPS 82.25.90.196 • <a href="/" >← Login page</a></div>
+  </div>
+</div>
+
+<div id="dash" class="hidden">
+  <div class="container" style="padding-top:20px;padding-bottom:20px">
+    <div class="stats-grid" style="margin-bottom:16px">
+      <div class="card"><div style="color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase">Total Keys</div><div id="m-keys" style="font-size:30px;font-weight:800;margin-top:4px">—</div><div style="color:var(--muted);font-size:12px" id="m-keys2"></div></div>
+      <div class="card"><div style="color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase">Activations</div><div id="m-act" style="font-size:30px;font-weight:800;margin-top:4px">—</div><div style="color:var(--muted);font-size:12px">devices bound</div></div>
+      <div class="card"><div style="color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase">Domain</div><div style="font-size:18px;font-weight:800;margin-top:4px;word-break:break-all">facedocs.bond</div><div style="color:var(--muted);font-size:12px">→ 82.25.90.196 • <span id="m-time"></span></div></div>
+    </div>
+
+    <div class="card" id="apkCard" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px">
+      <div>
+        <h3 style="font-size:15px;font-weight:700">APK Build</h3>
+        <div id="apkInfo" style="color:var(--muted);font-size:12px;margin-top:4px">Loading…</div>
+<form id="apkUploadForm" onsubmit="uploadApk(event)" style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,.02)">
+  <div style="font-size:12px;font-weight:700">Upload APK from this admin page</div>
+  <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+    <input id="apkUploadInput" type="file" accept=".apk,application/vnd.android.package-archive" required style="flex:1;min-width:180px;font-size:12px;color:var(--muted)"/>
+    <button class="btn btn-sm" type="submit">Upload APK</button>
+  </div>
+  <div id="apkUploadStatus" style="font-size:11px;color:var(--muted);margin-top:7px"></div>
+</form>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <a id="apkDownloadBtn" class="btn btn-sm" href="/files/FaceGate.apk" download style="display:none">⬇ Download</a>
+        <button class="btn btn-sm" style="color:#f87171;border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.07)" onclick="deleteApk()">🗑 Delete APK</button>
+        <button class="btn btn-sm" onclick="loadApkInfo()">↻ Refresh</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size:15px;font-weight:700">Create Key</h3>
+      <p style="color:var(--muted);font-size:12px;margin-top:4px">Leave key empty to auto-generate. Trial = 1h per device.</p>
+      <div class="create-grid" id="createGrid">
+        <input id="ck-key" class="input" placeholder="Key (leave empty to auto-generate with prefix)"/>
+        <input id="ck-prefix" class="input" placeholder="Prefix FACE" value="FACE"/>
+        <input id="ck-max" class="input" type="number" value="1" min="1" placeholder="max devices"/>
+        <select id="ck-type" class="input">
+          <option value="paid">Paid</option>
+          <option value="trial">Trial (1h)</option>
+          <option value="lifetime">Lifetime</option>
+        </select>
+        <input id="ck-days" class="input" type="number" value="30" placeholder="days"/>
+      </div>
+      <div class="create-actions">
+        <div class="note-row">
+          <input id="ck-note" class="input" placeholder="Note (optional)"/>
+        </div>
+        <button class="btn" onclick="autoGen()">+ Generate</button>
+        <button class="btn btn-primary" onclick="createKey()">Create</button>
+        <button class="btn" onclick="bulkGen()">Bulk 10</button>
+      </div>
+      <div style="color:var(--muted);font-size:11px;margin-top:8px">Bulk uses prefix + random 5+4 hex • Lifetime ignores days</div>
+    </div>
+
+    <div class="card table-card" style="margin-top:16px">
+      <div class="table-head"><h3 style="font-size:14px;font-weight:700">Keys</h3><div style="display:flex;gap:8px"><button class="btn btn-sm" style="color:#f87171;border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.07)" onclick="revokeAllKeys()">⚠ Revoke All</button><button class="btn btn-sm" onclick="loadKeys()">↻ Refresh</button></div></div>
+      <div class="table-wrap">
+        <table id="keysTbl"><thead><tr><th>Key</th><th>Type</th><th>Devices</th><th>Status</th><th>Expires</th><th>Note</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <div class="card table-card" style="margin-top:16px">
+      <div class="table-head"><h3 style="font-size:14px;font-weight:700">Activations (devices)</h3><button class="btn btn-sm" onclick="loadActs()">↻ Refresh</button></div>
+      <div class="table-wrap">
+        <table id="actsTbl"><thead><tr><th>Key</th><th>Device ID</th><th>Android ID</th><th>WiFi IP</th><th>Token (prefix)</th><th>Expires</th><th>Last Seen</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3 style="font-size:14px;font-weight:700">API Quick Test</h3>
+      <div class="api-grid">
+        <div>
+          <div style="font-size:13px;color:var(--muted);margin-bottom:6px">POST /api/validate_key</div>
+          <textarea id="t-validate" class="input" rows="4" style="font-family:ui-monospace,monospace;font-size:12px">{"key":"NOWORNEVER","device_id":"test-device-001"}</textarea>
+          <button class="btn btn-primary" style="margin-top:8px;width:100%" onclick="testValidate()">Test validate_key</button>
+          <pre id="o-validate" class="kbd" style="margin-top:8px;white-space:pre-wrap;min-height:60px;padding:10px;overflow:auto;max-height:240px"></pre>
+        </div>
+        <div>
+          <div style="font-size:13px;color:var(--muted);margin-bottom:6px">POST /api/activate (HMAC)</div>
+          <textarea id="t-activate" class="input" rows="4" style="font-family:ui-monospace,monospace;font-size:12px">{"key":"NOWORNEVER","device_id":"test-device-002","android_id":"abc123","wifi_bssid":"aa:bb:cc:dd:ee:ff","wifi_ip":"192.168.1.5","build_fp":"google/sdk","rid":"test-rid-123"}</textarea>
+          <button class="btn btn-primary" style="margin-top:8px;width:100%" onclick="testActivate()">Test activate</button>
+          <pre id="o-activate" class="kbd" style="margin-top:8px;white-space:pre-wrap;min-height:60px;padding:10px;overflow:auto;max-height:240px"></pre>
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align:center;color:var(--muted);font-size:11px;margin-top:16px">© 2026 FaceDocs • facedocs.bond • V4.7.8</div>
+  </div>
+</div>
+
+<script>
+let TOKEN = localStorage.getItem('fd_token') || '';
+let CREDS = localStorage.getItem('fd_creds') || '';
+
+function authHeader(){
+  if(TOKEN) return 'Bearer ' + TOKEN;
+  if(CREDS) return 'Basic ' + CREDS;
+  return '';
+}
+async function api(path, method='GET', body, noAuth=false){
+  const h={'Content-Type':'application/json'};
+  if(!noAuth && authHeader()) h['Authorization']=authHeader();
+  const r=await fetch(path,{method, headers:h, body: body?JSON.stringify(body):undefined});
+  const j=await r.json().catch(()=>({}));
+  return {r,j};
+}
+
+function showLogin(msg){
+  // redirect to main login page (hacker splash) instead of showing admin inline login
+  if(msg) sessionStorage.setItem('admin_msg', msg);
+  // hide loading if present
+  const ld=document.getElementById('loading'); if(ld) ld.classList.add('hidden');
+  window.location.href='/';
+}
+function hideLoading(){ const ld=document.getElementById('loading'); if(ld) ld.classList.add('hidden'); }
+function showDash(){
+  hideLoading();
+  document.getElementById('loginView').classList.add('hidden');
+  document.getElementById('dash').classList.remove('hidden');
+}
+async function doLogin(){
+  const u=document.getElementById('u').value.trim();
+  const p=document.getElementById('p').value.trim();
+  if(!u||!p){document.getElementById('loginMsg').textContent='Enter user & pass';return}
+  const {r,j}=await api('/admin/login','POST',{user:u, pass:p}, true);
+  if(j.ok){
+    TOKEN=j.token;
+    CREDS=btoa(u+':'+p);
+    localStorage.setItem('fd_token',TOKEN);
+    localStorage.setItem('fd_creds',CREDS);
+    document.getElementById('who').textContent=u;
+    showDash(); loadAll();
+  } else {
+    document.getElementById('loginMsg').textContent=j.message||'Login failed';
+  }
+}
+function logout(){
+  localStorage.removeItem('fd_token'); localStorage.removeItem('fd_creds'); TOKEN=''; CREDS='';
+  window.location.href='/';
+}
+
+async function checkAuth(){
+  if(!TOKEN && !CREDS){ showLogin(); return false; }
+  const {r}=await api('/admin/keys','GET');
+  if(r.status===401){ showLogin('Session expired — login again'); return false;}
+  const u = atob(CREDS).split(':')[0]||'admin';
+  document.getElementById('who').textContent=u;
+  showDash(); return true;
+}
+
+async function loadStats(){
+  const {j}=await api('/admin/stats','GET');
+  document.getElementById('m-keys').textContent=j.totalKeys ?? '—';
+  document.getElementById('m-keys2').textContent= (j.activeKeys||0)+' active • '+(j.trialKeys||0)+' trial';
+  document.getElementById('m-act').textContent=j.totalActivations ?? '—';
+  document.getElementById('m-time').textContent=new Date(j.time).toLocaleString();
+  document.getElementById('conn').textContent='API Online';
+  document.getElementById('conn').className='badge badge-green';
+}
+async function loadKeys(){
+  const {r,j}=await api('/admin/keys','GET');
+  if(r.status===401){showLogin();return}
+  const tb=document.querySelector('#keysTbl tbody'); tb.innerHTML='';
+  j.forEach(k=>{
+    const tr=document.createElement('tr');
+    const status = k.status_computed || k.status;
+    const badgeCls = status==='active'?'badge-green':status==='expired'?'badge-amber':'badge-red';
+    tr.innerHTML=`
+      <td><span class="kbd">${k.key}</span></td>
+      <td>${k.is_trial?'<span class="badge badge-amber">TRIAL</span>':'<span class="badge badge-green">PAID</span>'} <span style="color:var(--muted)">x${k.max_devices}</span></td>
+      <td>${k.used_count}/${k.max_devices} <span style="color:var(--muted)">rem ${k.remaining}</span></td>
+      <td><span class="badge ${badgeCls}">${status}</span></td>
+      <td style="font-size:12px">${k.expires_at? new Date(k.expires_at).toLocaleDateString(): '<span style="color:var(--muted)">lifetime/trial</span>'}</td>
+      <td style="color:var(--muted);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(k.note||'').replace(/"/g,'&quot;')}">${k.note||''}</td>
+      <td style="display:flex;gap:6px"><button class="btn btn-sm" onclick="statusKey('${k.key}')">status</button> <button class="btn btn-sm" style="color:#f87171;border-color:rgba(239,68,68,.3)" onclick="delKey(${k.id})">del</button></td>`;
+    tb.appendChild(tr);
+  });
+}
+async function loadActs(){
+  const {j}=await api('/admin/activations','GET');
+  const tb=document.querySelector('#actsTbl tbody'); tb.innerHTML='';
+  (j||[]).forEach(a=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td><span class="kbd">${a.keyText}</span></td>
+      <td><span class="kbd" title="${a.deviceId}">${a.deviceId.slice(0,16)}…</span></td>
+      <td style="font-size:11px;color:var(--muted)">${a.androidId||'—'}</td>
+      <td>${a.wifiIp||'—'}</td>
+      <td><span class="kbd">${(a.token||'').slice(0,14)}…</span></td>
+      <td style="font-size:12px">${a.expiresAt? new Date(a.expiresAt).toLocaleString(): '—'}</td>
+      <td style="font-size:12px">${a.lastSeen? new Date(a.lastSeen).toLocaleString(): '—'}</td>
+      <td><button class="btn btn-sm" style="color:#f87171;border-color:rgba(239,68,68,.3)" onclick="revoke('${a.deviceId}','${a.keyText}')">revoke</button></td>`;
+    tb.appendChild(tr);
+  });
+}
+async function createKey(){
+  const key=document.getElementById('ck-key').value.trim();
+  const prefix=document.getElementById('ck-prefix').value.trim()||'FACE';
+  const max=document.getElementById('ck-max').value;
+  const type=document.getElementById('ck-type').value;
+  const days=document.getElementById('ck-days').value;
+  const note=document.getElementById('ck-note').value.trim();
+  let finalKey=key;
+  if(!finalKey){
+    const rand = [...crypto.getRandomValues(new Uint8Array(3))].map(b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();
+    const rand2 = [...crypto.getRandomValues(new Uint8Array(2))].map(b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();
+    finalKey = `${prefix}-${rand}-${rand2}`;
+  }
+  const is_trial = type==='trial';
+  const is_paid = type!=='trial';
+  const d = type==='lifetime'? 0 : parseInt(days)||30;
+  const {r,j}=await api('/admin/keys','POST',{key:finalKey, max_devices:parseInt(max)||1, is_trial, is_paid, days:d, note});
+  if(r.ok){ loadKeys(); loadStats(); alert('Created: '+finalKey); document.getElementById('ck-key').value='';}
+  else alert('Error: '+(j.error||'failed'));
+}
+async function autoGen(){
+  const prefix=document.getElementById('ck-prefix').value.trim()||'FACE';
+  document.getElementById('ck-key').value = prefix+'-'+Math.random().toString(16).slice(2,8).toUpperCase()+'-'+Math.random().toString(16).slice(2,6).toUpperCase();
+}
+async function bulkGen(){
+  const prefix=document.getElementById('ck-prefix').value.trim()||'FACE';
+  const max=document.getElementById('ck-max').value;
+  const type=document.getElementById('ck-type').value;
+  const days=document.getElementById('ck-days').value;
+  const is_trial=type==='trial';
+  const {r,j}=await api('/admin/generate','POST',{prefix, count:10, max_devices:parseInt(max)||1, is_trial, days:parseInt(days)||30});
+  if(r.ok){ alert('Generated '+(j.length||0)+' keys'); loadKeys(); loadStats();}
+  else alert('Error');
+}
+async function delKey(id){
+  if(!confirm('Delete key '+id+' ? This also removes its activations.')) return;
+  const {r}=await api('/admin/keys/'+id,'DELETE');
+  if(r.ok) loadKeys();
+}
+async function revokeAllKeys(){
+  const {j:stats} = await api('/admin/stats','GET');
+  const count = stats.totalKeys ?? 0;
+  const acts = stats.totalActivations ?? 0;
+  if(count===0){ alert('No keys to revoke.'); return; }
+  if(!confirm(`⚠ Revoke ALL ${count} keys and ${acts} activations?\n\nThis will DELETE every key and every device activation permanently.\n\nClick OK to confirm...`)) return;
+  if(!confirm(`FINAL CONFIRM: Delete all ${count} keys? This cannot be undone.`)) return;
+  const {r,j}=await api('/admin/keys','DELETE');
+  if(r.ok){
+    alert(`Revoked ${j.deleted_keys} keys and ${j.deleted_activations} activations.`);
+    loadKeys(); loadStats(); loadActs();
+  } else {
+    alert('Failed: '+(j.error||'unknown'));
+  }
+}
+async function uploadApk(e){
+  e.preventDefault();
+  const input=document.getElementById("apkUploadInput");
+  const status=document.getElementById("apkUploadStatus");
+  const file=input.files && input.files[0];
+  if(!file){ status.textContent="Choose an APK first"; return; }
+  status.textContent="Uploading "+file.name+"…";
+  const fd=new FormData(); fd.append("apk", file, file.name);
+  try{
+    const r=await fetch("/admin/apk/upload",{method:"POST",body:fd});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.ok) throw new Error(j.error||"Upload failed");
+    status.textContent="✅ Uploaded — users can download it now.";
+    input.value=""; loadApkInfo();
+  }catch(err){ status.textContent="❌ "+err.message; }
+}
+async function loadApkInfo(){
+  const el=document.getElementById('apkInfo');
+  const btn=document.getElementById('apkDownloadBtn');
+  try{
+    const r=await fetch('/api/downloads');
+    const j=await r.json();
+    const apk = Array.isArray(j) ? j.find(f=>f.filename.toLowerCase().endsWith('.apk')) : null;
+    if(!apk){
+      el.textContent='No APK uploaded yet.';
+      if(btn) btn.style.display='none';
+      return;
+    }
+    const sizeMB=(apk.size/1024/1024).toFixed(2);
+    const ago = (()=>{
+      const d=Date.now()-new Date(apk.mtime).getTime();
+      const m=Math.floor(d/60000);
+      if(m<1) return 'just now';
+      if(m<60) return m+' mins ago';
+      const h=Math.floor(m/60);
+      if(h<24) return h+' hr'+(h>1?'s':'')+' ago';
+      const day=Math.floor(h/24);
+      return day+' day'+(day>1?'s':'')+' ago';
+    })();
+    el.innerHTML=`<span class="kbd">${apk.filename}</span> • ${sizeMB} MB • ${ago}`;
+    if(btn){ btn.href='/files/'+encodeURIComponent(apk.filename); btn.style.display='inline-flex'; }
+  }catch(e){
+    el.textContent='Failed to load: '+e.message;
+    if(btn) btn.style.display='none';
+  }
+}
+async function deleteApk(){
+  if(!confirm('Delete the current APK from server?\n\nThis will remove FaceGate.apk and all builds. Users will see “No APK available” until next workflow upload.')) return;
+  if(!confirm('FINAL CONFIRM: Permanently delete APK?')) return;
+  const {r,j}=await api('/admin/apk','DELETE');
+  if(r.ok){
+    alert(`Deleted ${j.deleted.length} files: ${j.deleted.join(', ')||'none'}`);
+    loadApkInfo();
+  } else {
+    alert('Failed: '+(j.error||'unknown'));
+  }
+}
+async function revoke(device,key){
+  if(!confirm(`Revoke device ${device.slice(0,12)}… from ${key}?`)) return;
+  const {r,j}=await api('/admin/activations','DELETE',{device_id:device, key});
+  if(j.ok) loadActs();
+  else alert(j.error||'failed');
+}
+async function statusKey(key){
+  const r=await fetch('/api/key_status/'+encodeURIComponent(key));
+  const j=await r.json();
+  alert(JSON.stringify(j,null,2));
+}
+async function testValidate(){
+  const body=JSON.parse(document.getElementById('t-validate').value||'{}');
+  const {j}=await api('/api/validate_key','POST',body, true);
+  document.getElementById('o-validate').textContent=JSON.stringify(j,null,2);
+}
+async function testActivate(){
+  const body=JSON.parse(document.getElementById('t-activate').value||'{}');
+  if(!body.rid) body.rid='test-'+Math.random().toString(36).slice(2,8);
+  const {j}=await api('/api/activate','POST',body, true);
+  document.getElementById('o-activate').textContent=JSON.stringify(j,null,2);
+}
+async function loadAll(){ loadStats(); loadKeys(); loadActs(); loadApkInfo(); }
+
+window.doLogin=doLogin; window.logout=logout; window.createKey=createKey; window.autoGen=autoGen; window.bulkGen=bulkGen; window.loadKeys=loadKeys; window.loadActs=loadActs; window.delKey=delKey; window.revokeAllKeys=revokeAllKeys; window.loadApkInfo=loadApkInfo; window.deleteApk=deleteApk; window.revoke=revoke; window.statusKey=statusKey; window.testValidate=testValidate; window.testActivate=testActivate;
+
+checkAuth().then(ok=>{ if(ok) loadAll(); });
+</script>
+</body>
+</html>

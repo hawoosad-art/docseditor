@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: docseditor
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: ADMIN_USER
+        sync: false
+      - key: ADMIN_PASS
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: UPLOAD_TOKEN
+        sync: false
+      - key: BOT_TRIAL_SECRET
+        sync: false

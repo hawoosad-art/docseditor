@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<link rel="icon" type="image/webp" href="/ic_launcher_round.webp"/>
+<title>PSD Editor — facedocs.bond</title>
+<meta name="description" content="Upload PSD, edit layers, export as PNG — FaceGate Editor"/>
+<script src="https://cdn.jsdelivr.net/npm/ag-psd@31.0.2/dist/bundle.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#080c14;--card:#111827;--border:#1f2937;--accent:#3b82f6;--text:#e5e7eb;--muted:#9ca3af}
+body{font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+a{color:#60a5fa;text-decoration:none}
+.nav{position:sticky;top:0;z-index:40;display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(8,12,20,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+.btn{border:1px solid var(--border);background:#111827;color:var(--text);padding:8px 12px;border-radius:9px;font-weight:600;font-size:13px;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{transform:translateY(-1px);border-color:#243049}
+.btn-primary{background:linear-gradient(135deg,#2563eb,#1d4ed8);border-color:transparent;color:white;box-shadow:0 6px 16px rgba(37,99,235,.25)}
+.btn-primary:hover{box-shadow:0 8px 20px rgba(37,99,235,.35)}
+.btn-sm{padding:6px 10px;font-size:12px}
+.input{width:100%;background:#0b1220;border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:8px;font-size:13px;outline:none}
+.kbd{font-family:ui-monospace,monospace;font-size:11px;background:#0b1220;border:1px solid var(--border);padding:3px 6px;border-radius:6px;color:var(--muted)}
+.layout{flex:1;display:grid;grid-template-columns:260px 1fr 300px;gap:0;min-height:0}
+@media(max-width:1024px){ .layout{grid-template-columns:200px 1fr 260px} }
+@media(max-width:760px){ .layout{grid-template-columns:1fr; grid-template-rows:auto 1fr auto} }
+.panel{background:rgba(17,24,39,.6);border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.panel:last-child{border-right:none;border-left:1px solid var(--border)}
+@media(max-width:760px){ .panel{border-right:none;border-left:none;border-bottom:1px solid var(--border)} .panel:last-child{border-bottom:none} }
+.panel-head{padding:12px 14px;border-bottom:1px solid var(--border);font-weight:700;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+.panel-body{flex:1;overflow:auto;padding:10px}
+.layer{padding:9px 10px;border:1px solid transparent;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:9px;margin-bottom:6px;background:rgba(255,255,255,.02)}
+.layer:hover{border-color:var(--border);background:rgba(255,255,255,.04)}
+.layer.active{border-color:#3b82f6;background:rgba(59,130,246,.12)}
+.layer-thumb{width:36px;height:36px;border-radius:6px;background:#0b1220;border:1px solid var(--border);flex-shrink:0;overflow:hidden;display:grid;place-items:center;font-size:11px;color:var(--muted)}
+.layer-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.layer-info{flex:1;min-width:0}
+.layer-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.layer-meta{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.canvas-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;overflow:auto;background:radial-gradient(600px 400px at 50% 0%, #1e293b22, transparent 60%), var(--bg)}
+.canvas-card{background:#0b1220;border:1px solid var(--border);border-radius:12px;padding:10px;box-shadow:0 16px 40px rgba(0,0,0,.4);max-width:100%;overflow:auto}
+#psdCanvas{max-width:100%;height:auto;display:block;background:transparent;image-rendering:auto}
+.drop{border:1px dashed var(--border);border-radius:10px;padding:18px;text-align:center;color:var(--muted);font-size:13px;cursor:pointer;transition:.15s}
+.drop:hover{border-color:#3b82f6;background:rgba(59,130,246,.06)}
+.drop.dragover{border-color:#3b82f6;background:rgba(59,130,246,.12)}
+.prop-group{margin-bottom:14px}
+.prop-group label{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;display:block;margin-bottom:6px}
+.prop-row{display:flex;gap:8px}
+.hidden{display:none}
+/* Loading overlay */
+#loadingOverlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(8,12,20,.7);z-index:100;display:none;justify-content:center;align-items:center;flex-direction:column;gap:12px}
+#loadingOverlay.active{display:flex}
+.loader-spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:#3b82f6;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loadingText{color:var(--text);font-size:14px;font-weight:600}
+.notice{border:1px solid #7c5c18;background:rgba(180,130,20,.1);color:#f7d98b;border-radius:9px;padding:10px 12px;font-size:12px;line-height:1.45}
+.modal-backdrop{position:fixed;inset:0;background:rgba(3,7,18,.78);backdrop-filter:blur(8px);z-index:80;display:none;align-items:center;justify-content:center;padding:18px}
+.modal-backdrop.open{display:flex}.modal{width:min(620px,100%);max-height:min(760px,calc(100vh - 36px));overflow:auto;background:#111827;border:1px solid #263449;border-radius:16px;box-shadow:0 24px 80px rgba(0,0,0,.55);padding:20px}
+.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}.modal-title{font-size:18px;font-weight:800}.modal-subtitle{color:var(--muted);font-size:12px;line-height:1.45;margin-top:5px}.close-btn{border:0;background:transparent;color:var(--muted);font-size:22px;cursor:pointer;padding:0 4px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.form-grid .full{grid-column:1/-1}.demo-result{display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:16px}.demo-result.open{display:block}.demo-result img{width:100%;height:auto;display:block;border-radius:12px;border:1px solid #314158}
+@media(max-width:600px){.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:auto}}
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loadingOverlay">
+  <div class="loader-spinner"></div>
+  <div id="loadingText">Loading PSD…</div>
+</div>
+
+<div id="demoModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="demoModalTitle">
+  <div class="modal">
+    <div class="modal-head"><div><div id="demoModalTitle" class="modal-title">Create a safe demo card</div><div class="modal-subtitle">AI suggests copy and a color accent. The renderer creates a fictional profile card and permanently adds the watermark.</div></div><button class="close-btn" id="closeDemoBtn" aria-label="Close">×</button></div>
+    <div class="notice" style="margin-bottom:14px">This tool is for fictional product demos only. It does not create or edit government IDs, driver licenses, passports, badges, permits, or other official documents.</div>
+    <form id="demoCardForm"><div class="form-grid">
+      <div class="prop-group"><label for="demoName">Display name</label><input id="demoName" name="name" class="input" maxlength="48" required placeholder="Demo Person"/></div>
+      <div class="prop-group"><label for="demoRole">Role</label><input id="demoRole" name="role" class="input" maxlength="48" placeholder="Creative profile"/></div>
+      <div class="prop-group"><label for="demoOrganization">Organization</label><input id="demoOrganization" name="organization" class="input" maxlength="62" placeholder="Fictional Studio"/></div>
+      <div class="prop-group"><label for="demoLabel">Card label</label><input id="demoLabel" name="label" class="input" maxlength="40" placeholder="PROFILE CARD"/></div>
+      <div class="prop-group full"><label for="demoTagline">Tagline</label><input id="demoTagline" name="tagline" class="input" maxlength="80" placeholder="A fictional demo profile"/></div>
+      <div class="prop-group full"><label for="demoPhoto">Photo</label><input id="demoPhoto" name="photo" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif,image/heic,image/heif" class="input" required/><div style="font-size:11px;color:var(--muted);margin-top:6px">The photo is composited into the fictional card and is not sent to the AI model.</div></div>
+    </div><div id="demoFormStatus" style="font-size:12px;color:var(--muted);min-height:18px;margin:4px 0 10px"></div><button id="demoSubmitBtn" type="submit" class="btn btn-primary" style="width:100%;justify-content:center">✨ Generate safe demo PNG</button></form>
+    <div id="demoResult" class="demo-result"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px"><div><div style="font-weight:700;font-size:13px">Ready to download</div><div id="demoResultMeta" style="color:var(--muted);font-size:11px;margin-top:3px"></div></div><a id="demoDownload" class="btn btn-primary btn-sm" download>⬇ Download PNG</a></div><img id="demoResultImage" alt="Generated fictional demo card"/></div>
+  </div>
+</div>
+
+<nav class="nav">
+  <a href="/" style="font-weight:800;display:flex;align-items:center;gap:9px">
+    <img src="/ic_launcher_round.webp" alt="FaceGate" style="width:28px;height:28px;border-radius:8px;object-fit:cover;border:1px solid #1f2937;display:block"/>
+    FaceGate <span style="color:var(--muted);font-weight:500">Editor</span>
+  </a>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button class="btn btn-sm" id="uploadBtn">📂 Upload PSD</button>
+    <button class="btn btn-sm" id="demoCardBtn">✨ Safe demo card</button>
+    <button class="btn btn-primary btn-sm" onclick="exportPNG()">⬇ Export PNG</button>
+    <button class="btn btn-sm hidden" id="saveServerBtn" onclick="uploadPsdToServer()">☁ Save to VPS</button>
+    <a class="btn btn-sm" href="/download">Download APK</a>
+  </div>
+</nav>
+
+<div class="layout">
+  <!-- Left: Layers -->
+  <div class="panel">
+    <div class="panel-head"><span>Layers</span><span id="layerCount" class="kbd">0</span></div>
+    <div class="panel-body">
+      <div id="dropZone" class="drop" style="position:relative;overflow:hidden">
+        <input id="psdFile" type="file" style="position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:0"/>
+        <div style="font-size:22px">🎨</div>
+        <div style="margin-top:6px;font-weight:600">Drop .psd here</div>
+        <div style="font-size:11px;margin-top:2px">or click to browse — choose <b>Files</b></div>
+        <div class="kbd" style="margin:8px auto 0;display:inline-block">.psd → edit → PNG</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4">On phone: tap <b>Browse</b> / <b>Files</b> at the top<br>then go to Downloads/Documents to find your .psd</div>
+        <div id="psdStatus" style="font-size:12px;color:#60a5fa;margin-top:8px;min-height:16px;font-weight:600"></div>
+      </div>
+      <div style="margin-top:12px;padding:10px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--muted)">Direct VPS upload (if editor won't load):</div>
+        <form id="directUploadForm" onsubmit="directUpload(event)" style="margin-top:6px;display:flex;gap:6px">
+          <input type="file" id="directPsdFile" name="psd" style="flex:1;font-size:12px;color:var(--muted)"/>
+          <button type="submit" class="btn btn-sm">Upload</button>
+        </form>
+        <div id="directUploadStatus" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
+      </div>
+      <div id="layers" style="margin-top:12px"></div>
+      <div id="noLayers" style="color:var(--muted);font-size:12px;text-align:center;margin-top:16px;display:none">No PSD loaded.</div>
+    </div>
+  </div>
+
+  <!-- Center: Canvas -->
+  <div class="canvas-wrap">
+    <div style="width:100%;text-align:center;margin-bottom:10px;color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase" id="canvasLabel" class="hidden">Full Preview — all layers together</div>
+    <div class="canvas-card" id="canvasCard" style="display:none">
+      <canvas id="psdCanvas"></canvas>
+    </div>
+    <div id="placeholder" style="text-align:center;color:var(--muted);max-width:420px">
+      <div style="width:64px;height:64px;margin:0 auto 12px;border-radius:16px;background:#0b1220;border:1px solid var(--border);display:grid;place-items:center;font-size:28px">🖼️</div>
+      <div style="font-weight:700">PSD → PNG Editor — Full View</div>
+      <div style="font-size:13px;margin-top:6px;line-height:1.5">Upload a <code>.psd</code> / <code>.psb</code> to see the <b>full image</b> (all layers together). Click a layer on the left to edit its text or image — the center shows the <b>full composite</b>, not just parts. Then <b>Export PNG</b> saves the full.</div>
+      <div class="kbd" style="margin-top:10px;display:inline-block">Powered by ag-psd + Canvas</div>
+    </div>
+  </div>
+
+  <!-- Right: Properties -->
+  <div class="panel">
+    <div class="panel-head">Properties</div>
+    <div class="panel-body" id="props">
+      <div id="noSel" style="color:var(--muted);font-size:13px;text-align:center;margin-top:20px">Select a layer on the left to edit.</div>
+
+      <div id="textProps" class="hidden">
+        <div class="prop-group">
+          <label>Text</label>
+          <textarea id="txtContent" class="input" rows="3" placeholder="Layer text"></textarea>
+        </div>
+        <div class="prop-row">
+          <div class="prop-group" style="flex:1">
+            <label>Size</label>
+            <input id="txtSize" type="number" class="input" placeholder="24"/>
+          </div>
+          <div class="prop-group" style="flex:1">
+            <label>Color</label>
+            <input id="txtColor" type="color" class="input" style="padding:4px;height:38px"/>
+          </div>
+        </div>
+        <button class="btn btn-primary" style="width:100%" onclick="applyText()">Apply Text</button>
+      </div>
+
+      <div id="imageProps" class="hidden">
+        <div class="prop-group">
+          <label>Replace Image</label>
+          <input id="imgReplace" type="file" accept="image/*" class="input"/>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px">Upload a PNG/JPG to replace this layer's pixels.</div>
+        </div>
+        <button class="btn" style="width:100%" onclick="clearImageReplace()">Clear</button>
+      </div>
+
+      <div id="layerInfo" class="hidden" style="margin-top:14px;padding:10px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;font-size:11px;line-height:1.5;color:var(--muted)"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ─── Helper: show status to user (visible, not just console) ─── */
+function showStatus(msg, color){
+  const el = document.getElementById('psdStatus');
+  if(el){ el.textContent = msg; el.style.color = color || '#60a5fa'; }
+}
+function showLoading(msg){
+  const ov = document.getElementById('loadingOverlay');
+  const txt = document.getElementById('loadingText');
+  if(ov) ov.classList.add('active');
+  if(txt) txt.textContent = msg || 'Loading…';
+}
+function hideLoading(){
+  const ov = document.getElementById('loadingOverlay');
+  if(ov) ov.classList.remove('active');
+}
+
+let psd = null;
+let currentPsdFile = null;
+let flatLayers = []; // {idx, layer, depth}
+let selected = null;
+let editedLayers = new Set(); // track edited layers to draw on top of full
+const canvas = document.getElementById('psdCanvas');
+const ctx = canvas.getContext('2d');
+
+function flatten(layers, depth=0, out=[]){
+  layers.forEach(l=>{
+    out.push({layer:l, depth});
+    if(l.children) flatten(l.children, depth+1, out);
+  });
+  return out;
+}
+
+function render(forExport){
+  if(!psd) return;
+  const w = psd.width, h = psd.height;
+  // limit canvas size for display (avoid huge PSB crashing)
+  const maxDisplay = 3000;
+  let displayW = w, displayH = h, scale = 1;
+  if(w>maxDisplay || h>maxDisplay){
+    scale = Math.min(maxDisplay/w, maxDisplay/h);
+    displayW = Math.round(w*scale);
+    displayH = Math.round(h*scale);
+  }
+  canvas.width = w; canvas.height = h;
+  canvas.style.width = displayW+'px';
+  canvas.style.height = displayH+'px';
+  // === Render: draw full composite, then overlay edited layers ===
+  let drewFull = false;
+
+  // Try psd.canvas first (correct full composite with blend modes)
+  if(psd.canvas && psd.canvas.width > 0 && psd.canvas.height > 0){
+    try{
+      ctx.drawImage(psd.canvas, 0, 0);
+      drewFull = true;
+      console.log('render: drew psd.canvas', psd.canvas.width, 'x', psd.canvas.height);
+    }catch(e){ console.error('psd.canvas draw fail', e); }
+  }
+
+  // Fallback: psd.imageData
+  if(!drewFull && psd.imageData && psd.imageData.data){
+    try{
+      const tmp = document.createElement('canvas');
+      tmp.width = w; tmp.height = h;
+      tmp.getContext('2d').putImageData(psd.imageData, 0, 0);
+      ctx.drawImage(tmp, 0, 0);
+      drewFull = true;
+      console.log('render: drew psd.imageData');
+    }catch(e){ console.error('imageData draw fail', e); }
+  }
+
+  // Fallback: per-layer composite
+  if(!drewFull){
+    console.log('render: falling back to per-layer composite');
+    const list = [...flatLayers].reverse();
+    let drewAny = false;
+    list.forEach(({layer})=>{
+      if(layer.hidden) return;
+      let src = layer.canvas;
+      if(!src && layer.imageData){
+        try{
+          const c2 = document.createElement('canvas');
+          c2.width = layer.imageData.width || (layer.right - layer.left);
+          c2.height = layer.imageData.height || (layer.bottom - layer.top);
+          c2.getContext('2d').putImageData(layer.imageData, 0, 0);
+          src = c2;
+        }catch{}
+      }
+      if(!src) return;
+      try{
+        ctx.drawImage(src, layer.left ?? 0, layer.top ?? 0);
+        drewAny = true;
+      }catch{}
+    });
+    if(drewAny) drewFull = true;
+    if(!drewAny){
+      ctx.fillStyle = '#1f2937'; ctx.fillRect(0,0,w,h);
+      ctx.fillStyle = '#9ca3af'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('No composite — try Photopea', w/2, h/2);
+    }
+  }
+
+  // Overlay edited layers on top of the full composite
+  if(editedLayers.size > 0){
+    editedLayers.forEach(layer=>{
+      if(!layer.canvas) return;
+      try{
+        const lx = layer.left ?? 0, ly = layer.top ?? 0;
+
+        if(layer._editBg){
+          // Text edit: sample bg from current canvas, create opaque text canvas
+          const lw = (layer.right - layer.left) || layer.canvas.width;
+          const lh = (layer.bottom - layer.top) || layer.canvas.height;
+          try{
+            // Sample average background from the render canvas at the text position
+            const compData = ctx.getImageData(lx, ly, lw, lh).data;
+            const origD = layer._originalCanvas ? layer._originalCanvas.getContext('2d').getImageData(0, 0, lw, lh).data : null;
+            let r=0, g=0, b=0, n=0;
+            for(let i = 0; i < compData.length; i += 4){
+              const isBg = !origD || origD[i+3] < 10;
+              if(isBg){ r += compData[i]; g += compData[i+1]; b += compData[i+2]; n++; }
+            }
+            const bgR = n > 0 ? Math.round(r/n) : 255;
+            const bgG = n > 0 ? Math.round(g/n) : 255;
+            const bgB = n > 0 ? Math.round(b/n) : 255;
+            // Create opaque canvas: bg color + new text
+            const tc = document.createElement('canvas');
+            tc.width = lw; tc.height = lh;
+            const tg = tc.getContext('2d');
+            tg.fillStyle = 'rgb('+bgR+','+bgG+','+bgB+')';
+            tg.fillRect(0, 0, lw, lh);
+            tg.drawImage(layer.canvas, 0, 0);
+            ctx.drawImage(tc, lx, ly);
+          }catch(e2){
+            console.error('text bg overlay fail', e2);
+            ctx.drawImage(layer.canvas, lx, ly);
+          }
+        } else if(layer._editImg) {
+          // Image replace: simple overlay on top of composite (verified correct)
+          ctx.drawImage(layer.canvas, lx, ly);
+        }
+      }catch(e){ console.error('edit overlay fail', layer.name, e); }
+    });
+  }
+
+  // highlight selected (on top of full) — skip when exporting
+  if(!forExport) {
+  if(selected && selected.layer && !selected.layer.children){
+    const l = selected.layer;
+    if(l.left !== undefined && l.top !== undefined){
+      ctx.save();
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6,3]);
+      const ww = l.canvas?.width || l.imageData?.width || (l.right - l.left) || 0;
+      const hh = l.canvas?.height || l.imageData?.height || (l.bottom - l.top) || 0;
+      if(ww>0 && hh>0){
+        ctx.strokeRect((l.left??0), (l.top??0), ww, hh);
+        ctx.fillStyle = 'rgba(59,130,246,0.9)';
+        ctx.fillRect(l.left??0, Math.max(0,(l.top??0)-14), 70, 14);
+        ctx.fillStyle = 'white';
+        ctx.font = '10px Inter';
+        ctx.fillText('SELECTED', (l.left??0)+4, (l.top??0)-4);
+      }
+      ctx.restore();
+    }
+  }
+  } // end if(!forExport)
+  console.log(`render done: ${w}x${h}, drewFull=${drewFull}, psd.canvas=${!!psd?.canvas}, psd.imageData=${!!psd?.imageData}, edited=${editedLayers.size}, selected=${selected?.layer?.name}`);
+}
+
+function buildLayerList(){
+  const el = document.getElementById('layers');
+  const count = document.getElementById('layerCount');
+  el.innerHTML='';
+  count.textContent = flatLayers.length;
+  if(flatLayers.length===0){
+    document.getElementById('noLayers').style.display='block';
+    return;
+  }
+  document.getElementById('noLayers').style.display='none';
+  flatLayers.forEach((item, idx)=>{
+    const {layer, depth} = item;
+    const div = document.createElement('div');
+    div.className = 'layer' + (selected && selected.layer===layer ? ' active' : '');
+    div.style.marginLeft = (depth*12)+'px';
+    const isText = !!layer.text;
+    const isGroup = !!layer.children;
+    const thumb = document.createElement('div');
+    thumb.className='layer-thumb';
+    if(layer.canvas){
+      try{
+        const c = document.createElement('canvas');
+        c.width = 36; c.height = 36;
+        const g=c.getContext('2d');
+        g.fillStyle='#0b1220'; g.fillRect(0,0,36,36);
+        const scale = Math.min(36/(layer.canvas.width||36), 36/(layer.canvas.height||36));
+        const w=(layer.canvas.width||36)*scale, h=(layer.canvas.height||36)*scale;
+        g.drawImage(layer.canvas, (36-w)/2, (36-h)/2, w, h);
+        thumb.innerHTML=''; thumb.appendChild(c);
+      }catch{ thumb.textContent = isText?'T':'🖼'; }
+    } else {
+      thumb.textContent = isGroup ? '📁' : (isText?'T':'—');
+    }
+    const info=document.createElement('div');
+    info.className='layer-info';
+    const name = layer.name || '(unnamed)';
+    info.innerHTML=`<div class="layer-name">${name}</div><div class="layer-meta">${isGroup?'Group': isText?'Text • '+(layer.text?.text?.slice(0,20)||'') : 'Image • '+(layer.right-layer.left||0)+'×'+(layer.bottom-layer.top||0)}</div>`;
+    div.appendChild(thumb); div.appendChild(info);
+    div.onclick=()=>selectLayer(idx);
+    el.appendChild(div);
+  });
+}
+
+function selectLayer(idx){
+  selected = flatLayers[idx];
+  buildLayerList();
+  render();
+  const layer = selected.layer;
+  document.getElementById('noSel').style.display='none';
+  document.getElementById('textProps').classList.toggle('hidden', !layer.text);
+  document.getElementById('imageProps').classList.toggle('hidden', !!layer.text || !!layer.children);
+  document.getElementById('layerInfo').classList.remove('hidden');
+  document.getElementById('layerInfo').innerHTML = `
+    <div><b>Name:</b> ${layer.name||'-'}</div>
+    <div><b>Pos:</b> ${layer.left},${layer.top} → ${layer.right},${layer.bottom}</div>
+    <div><b>Size:</b> ${(layer.right-layer.left)}×${(layer.bottom-layer.top)}</div>
+    <div><b>Opacity:</b> ${layer.opacity ?? 255}</div>
+    <div><b>Blend:</b> ${layer.blendMode||'-'}</div>
+  `;
+  if(layer.text){
+    const t = layer.text;
+    let txt = t.text || t.txt || '';
+    if(typeof txt !== 'string' && t.paragraphs) txt = t.paragraphs.map(p=>p.text).join('\\n');
+    document.getElementById('txtContent').value = txt;
+    let size = 24, color='#ffffff';
+    try{
+      if(t.style && t.style.fontSize) size = parseInt(t.style.fontSize);
+      if(t.styles && t.styles[0] && t.styles[0].style && t.styles[0].style.fontSize) size = parseInt(t.styles[0].style.fontSize);
+      if(t.style && t.style.fillColor) color = rgbToHex(t.style.fillColor);
+      if(t.styles && t.styles[0] && t.styles[0].style && t.styles[0].style.fillColor) color = rgbToHex(t.styles[0].style.fillColor);
+    }catch{}
+    document.getElementById('txtSize').value = size;
+    document.getElementById('txtColor').value = color;
+  }
+}
+
+function rgbToHex(c){
+  if(!c) return '#ffffff';
+  if(typeof c === 'string') return c;
+  if(Array.isArray(c) && c.length>=3){
+    const r=Math.round(c[0]*255), g=Math.round(c[1]*255), b=Math.round(c[2]*255);
+    return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
+  }
+  if(c.r!==undefined) return '#'+[c.r,c.g,c.b].map(x=>Math.round(x).toString(16).padStart(2,'0')).join('');
+  return '#ffffff';
+}
+function hexToRgb(hex){
+  const n=parseInt(hex.slice(1),16);
+  return [(n>>16 &255)/255, (n>>8 &255)/255, (n &255)/255];
+}
+
+function applyText(){
+  if(!selected || !selected.layer.text) return;
+  const newTxt = document.getElementById('txtContent').value;
+  const newSize = parseInt(document.getElementById('txtSize').value) || 24;
+  const newColor = document.getElementById('txtColor').value;
+  const layer = selected.layer;
+  try{
+    if(layer.text.text !== undefined) layer.text.text = newTxt;
+    else if(layer.text.txt !== undefined) layer.text.txt = newTxt;
+
+    const lw = (layer.right - layer.left) || 200;
+    const lh = (layer.bottom - layer.top) || 50;
+
+    // Create text canvas on transparent background (render will add bg)
+    const c = document.createElement('canvas');
+    c.width = lw; c.height = lh;
+    const g = c.getContext('2d');
+    g.fillStyle = newColor;
+    g.font = newSize + 'px Inter, sans-serif';
+    g.textBaseline = 'top';
+    const lines = newTxt.split('\n');
+    lines.forEach((ln, i) => g.fillText(ln, 4, 4 + i * (newSize * 1.3)));
+
+    if(!layer._originalCanvas && layer.canvas) layer._originalCanvas = layer.canvas;
+    layer.canvas = c;
+    if(layer.imageData) delete layer.imageData;
+    if(!layer.text.style) layer.text.style = {};
+    layer.text.style.fontSize = newSize;
+    layer.text.style.fillColor = hexToRgb(newColor);
+    layer._editBg = true; // flag: render needs to add background
+    editedLayers.add(layer);
+  }catch(e){ alert('Text update failed: ' + e.message); console.error(e); }
+  buildLayerList();
+  render();
+}
+
+function clearImageReplace(){
+  document.getElementById('imgReplace').value='';
+  if(!selected) return;
+  const layer = selected.layer;
+  // Restore original canvas if it was replaced
+  if(layer._originalCanvas && editedLayers.has(layer)){
+    layer.canvas = layer._originalCanvas;
+    delete layer._originalCanvas;
+    delete layer._editImg;
+    editedLayers.delete(layer);
+    buildLayerList();
+    render();
+  }
+}
+
+/* ─── Image replacement handler ─── */
+document.getElementById('imgReplace').addEventListener('change', function(e){
+  const file = e.target.files && e.target.files[0];
+  if(!file || !selected) return;
+  const layer = selected.layer;
+  if(layer.children) return; // skip groups
+
+  console.log('imgReplace:', file.name, file.size, 'for layer:', layer.name);
+
+  // Save original canvas before replacing
+  if(!layer._originalCanvas && layer.canvas) layer._originalCanvas = layer.canvas;
+
+  const lw = (layer.right - layer.left) || 200;
+  const lh = (layer.bottom - layer.top) || 200;
+
+  // Read the image file
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    const img = new Image();
+    img.onload = function(){
+      // Create replacement canvas with cover scale (fill layer area)
+      const c = document.createElement('canvas');
+      c.width = lw; c.height = lh;
+      const g = c.getContext('2d');
+
+      // Cover scale: fill the layer area completely, cropping excess
+      const scale = Math.max(lw / img.width, lh / img.height);
+      const sw = img.width * scale;
+      const sh = img.height * scale;
+      g.drawImage(img, (lw - sw) / 2, (lh - sh) / 2, sw, sh);
+
+      layer.canvas = c;
+      if(layer.imageData) delete layer.imageData;
+      layer._editImg = true; // flag: this is an image replacement
+      editedLayers.add(layer);
+      console.log('Image replaced for layer:', layer.name, lw+'x'+lh);
+      buildLayerList();
+      render();
+    };
+    img.onerror = function(){ alert('Failed to load image. Try a different file.'); };
+    img.src = ev.target.result;
+  };
+  reader.onerror = function(){ alert('Failed to read file.'); };
+  reader.readAsDataURL(file);
+});
+
+function exportPNG(){
+  if(!psd){ alert('Upload a PSD first'); return; }
+  // Render without selection highlight for clean export
+  render(true);
+  canvas.toBlob(function(blob){
+    if(!blob){ alert('PNG export failed — the canvas is empty'); render(); return; }
+    const url = URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=(psd.name||'export').replace(/\.(psd|psb)$/i,'')+'.png';
+    if(!a.download) a.download='export.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+    render();
+  }, 'image/png');
+}
+
+async function uploadPsdToServer(){
+  if(!currentPsdFile){ alert('No PSD loaded — upload one first'); return; }
+  const btn=document.getElementById('saveServerBtn');
+  const origText=btn.textContent;
+  btn.textContent='⏳ Uploading…'; btn.disabled=true;
+  try{
+    const fd=new FormData();
+    fd.append('psd', currentPsdFile, currentPsdFile.name);
+    const r=await fetch('/api/psd/upload', {method:'POST', body: fd});
+    const j=await r.json();
+    if(j.ok){
+      alert('Saved to VPS: '+j.filename+' ('+(j.size/1024).toFixed(1)+' KB)\n'+j.url);
+    } else {
+      alert('Upload failed: '+(j.error||'unknown'));
+    }
+  }catch(e){ alert('Upload failed: '+e.message); }
+  finally{ btn.textContent=origText; btn.disabled=false; }
+}
+async function directUpload(e){
+  e.preventDefault();
+  const inp=document.getElementById('directPsdFile');
+  const file=inp.files[0];
+  const status=document.getElementById('directUploadStatus');
+  if(!file){ status.textContent='Choose a .psd/.psb first'; return; }
+  status.textContent='Uploading '+file.name+'…';
+  try{
+    const fd=new FormData();
+    fd.append('psd', file, file.name);
+    const r=await fetch('/api/psd/upload', {method:'POST', body: fd});
+    const j=await r.json();
+    if(j.ok){
+      status.innerHTML='✅ Saved: <a href="'+j.url+'" target="_blank">'+j.filename+'</a> ('+(j.size/1024).toFixed(1)+' KB)';
+    } else {
+      status.textContent='❌ '+(j.error||'failed');
+    }
+  }catch(err){
+    status.textContent='❌ '+err.message;
+  }
+}
+
+/* ─── Core: handleFile — robust PSD loading with FileReader fallback ─── */
+async function handleFile(file){
+  try {
+    if(!file){
+      showStatus('No file selected — try again', '#f87171');
+      return;
+    }
+    showStatus('📄 ' + file.name + ' (' + (file.size/1024).toFixed(1) + ' KB)', '#60a5fa');
+    showLoading('Reading ' + file.name + '…');
+    console.log('handleFile:', file.name, file.size, file.type);
+    currentPsdFile=file;
+    document.getElementById('saveServerBtn').classList.remove('hidden');
+
+    // ── Read file as ArrayBuffer (with FileReader fallback for mobile) ──
+    let buf;
+    try{
+      if(typeof file.arrayBuffer === 'function'){
+        buf = await file.arrayBuffer();
+      }
+      // If arrayBuffer returned 0 bytes or failed, try FileReader
+      if(!buf || buf.byteLength === 0){
+        console.log('arrayBuffer empty/missing, trying FileReader');
+        buf = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error('FileReader failed: ' + (reader.error?.message || 'unknown')));
+          reader.readAsArrayBuffer(file);
+        });
+      }
+    }catch(e){
+      console.warn('arrayBuffer() failed, trying FileReader', e);
+      buf = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('FileReader failed: ' + (reader.error?.message || 'unknown')));
+        reader.readAsArrayBuffer(file);
+      });
+    }
+
+    if(!buf || buf.byteLength === 0){
+      throw new Error('File is empty (0 bytes) — may not have been read correctly. Try a different file or browser.');
+    }
+
+    console.log('File read OK:', buf.byteLength, 'bytes');
+    showLoading('Parsing PSD (' + (buf.byteLength/1024).toFixed(0) + ' KB)…');
+
+    // ── Parse PSD with ag-psd ──
+    let psdObj = null;
+    const AgPsd = window.AgPsd || window.agPsd || window.ag_psd;
+
+    if(!AgPsd || !AgPsd.readPsd){
+      throw new Error('ag-psd library not loaded. Check your internet connection and reload the page.');
+    }
+
+    try{
+      psdObj = AgPsd.readPsd(buf);
+    console.log('ag-psd result:', psdObj?.width, 'x', psdObj?.height, 'canvas:', !!psdObj?.canvas, psdObj?.canvas?.width, 'x', psdObj?.canvas?.height, 'children:', psdObj?.children?.length, 'imageData:', !!psdObj?.imageData);
+    // Log first few layers
+    function logLayers(layers, depth=0){ layers?.slice(0,5).forEach(l => { console.log(' '.repeat(depth*2), l.name, 'canvas:', !!l.canvas, l.canvas?.width+'x'+l.canvas?.height, 'blend:', l.blendMode, 'hidden:', l.hidden); if(l.children) logLayers(l.children, depth+1); }); }
+    logLayers(psdObj?.children);
+      console.log('ag-psd parse OK:', psdObj?.width, 'x', psdObj?.height, 'children:', psdObj?.children?.length);
+    }catch(e){
+      console.error('ag-psd parse failed:', e);
+      throw new Error('PSD parse error: ' + e.message + '\n\nThis PSD may use features not supported by ag-psd. Try a simpler file or use Photopea.');
+    }
+
+    if(!psdObj){
+      throw new Error('PSD parser returned nothing — file may be corrupt or unsupported.');
+    }
+    if(!psdObj.width || !psdObj.height){
+      throw new Error('PSD has no dimensions (0×0). File may be corrupt or empty.');
+    }
+
+    // ── Set up PSD for rendering ──
+    psd = psdObj;
+    psd.name = file.name;
+
+    // If no children from parser, create a single background layer from the canvas
+    if(!psd.children || psd.children.length===0){
+      if(psd.canvas){
+        psd.children = [{
+          name: 'Background',
+          left: 0, top: 0, right: psd.width, bottom: psd.height,
+          canvas: psd.canvas,
+          hidden: false,
+          opacity: 255
+        }];
+      } else {
+        // No layers and no canvas — still show dimensions
+        psd.children = [];
+      }
+    }
+
+    flatLayers = flatten(psd.children || []);
+    document.getElementById('canvasCard').style.display='block';
+    document.getElementById('canvasLabel').classList.remove('hidden');
+    document.getElementById('placeholder').style.display='none';
+    buildLayerList();
+    render();
+    const first = flatLayers.findIndex(f=>!f.layer.children);
+    if(first>=0) selectLayer(first);
+
+    showStatus('✅ ' + file.name + ' — ' + flatLayers.length + ' layers, ' + psd.width + '×' + psd.height, '#34d399');
+    hideLoading();
+    console.log('PSD loaded successfully:', psd.width, 'x', psd.height, flatLayers.length, 'layers');
+
+  }catch(e){
+    console.error('handleFile error:', e);
+    hideLoading();
+    showStatus('❌ ' + e.message, '#f87171');
+    alert('Failed to load PSD:\n\n' + e.message);
+  }
+}
+
+/* ─── File input wiring: reset value on click, listen to both change & input ─── */
+const psdFileInput = document.getElementById('psdFile');
+
+// Reset value on click so change event fires even for same file
+psdFileInput.addEventListener('click', function(){
+  this.value = '';
+});
+
+// Primary: 'change' event
+psdFileInput.addEventListener('change', function(e){
+  const file = e.target.files && e.target.files[0];
+  console.log('psdFile change event, files:', e.target.files?.length, file?.name);
+  if(file) handleFile(file);
+  else showStatus('No file selected', '#f87171');
+});
+
+// Fallback: 'input' event (some mobile browsers fire this instead)
+psdFileInput.addEventListener('input', function(e){
+  const file = e.target.files && e.target.files[0];
+  console.log('psdFile input event, files:', e.target.files?.length, file?.name);
+  if(file) handleFile(file);
+});
+
+// Upload button in nav — also reset input value
+document.getElementById('uploadBtn').addEventListener('click', function(){
+  psdFileInput.value = '';
+  psdFileInput.click();
+});
+
+// Drag & drop
+const dz=document.getElementById('dropZone');
+dz.addEventListener('dragover', e=>{ e.preventDefault(); dz.classList.add('dragover'); });
+dz.addEventListener('dragleave', ()=> dz.classList.remove('dragover'));
+dz.addEventListener('drop', e=>{ e.preventDefault(); dz.classList.remove('dragover'); const f=e.dataTransfer.files[0]; if(f) handleFile(f); });
+
+/* ─── Safe AI-assisted demo-card flow ─── */
+const demoModal=document.getElementById('demoModal'), demoForm=document.getElementById('demoCardForm'), demoStatus=document.getElementById('demoFormStatus'), demoResult=document.getElementById('demoResult'), demoSubmitBtn=document.getElementById('demoSubmitBtn');
+function openDemoCard(){ demoModal.classList.add('open'); document.getElementById('demoName').focus(); }
+function closeDemoCard(){ demoModal.classList.remove('open'); }
+document.getElementById('demoCardBtn').addEventListener('click',openDemoCard);
+document.getElementById('closeDemoBtn').addEventListener('click',closeDemoCard);
+demoModal.addEventListener('click',e=>{if(e.target===demoModal)closeDemoCard();});
+demoForm.addEventListener('submit',async function(e){
+  e.preventDefault();
+  const photo=document.getElementById('demoPhoto').files?.[0];
+  if(!photo){demoStatus.textContent='Choose a photo first.';demoStatus.style.color='#f87171';return;}
+  demoSubmitBtn.disabled=true; demoSubmitBtn.textContent='⏳ Creating safe demo…'; demoStatus.textContent='AI is preparing the fictional layout, then the server will composite the photo…'; demoStatus.style.color='#60a5fa'; demoResult.classList.remove('open');
+  try{
+    const r=await fetch('/api/demo-card',{method:'POST',body:new FormData(demoForm)}), j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.ok)throw new Error(j.error||'Demo card generation failed');
+    document.getElementById('demoResultImage').src=j.downloadUrl; document.getElementById('demoDownload').href=j.downloadUrl; document.getElementById('demoResultMeta').textContent=`${j.aiUsed?'AI-assisted':'Safe fallback'} • ${j.watermark}`; demoResult.classList.add('open'); demoStatus.textContent='Done. The watermark is permanent.'; demoStatus.style.color='#34d399';
+  }catch(err){demoStatus.textContent='❌ '+err.message;demoStatus.style.color='#f87171';}
+  finally{demoSubmitBtn.disabled=false;demoSubmitBtn.textContent='✨ Generate safe demo PNG';}
+});
+
+// Log that the page is ready and ag-psd is available
+console.log('Editor ready. ag-psd available:', !!(window.AgPsd || window.agPsd || window.ag_psd));
+</script>
+</body>
+</html>

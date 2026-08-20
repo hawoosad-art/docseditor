@@ -1,0 +1,11 @@
+node_modules/
+data/db.json
+data/*.json
+uploads/
+uploads/*.apk
+uploads/*.zip
+.env
+.DS_Store
+*.log
+npm-debug.log*
+.pm2/
