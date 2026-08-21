@@ -5,10 +5,35 @@ this is the playbook. Everything lives in this folder:
 
 | File | Purpose |
 |---|---|
-| `setup.sh` | One-shot server provisioning: Node 22, fonts, app checkout, PM2, nginx, Let's Encrypt |
+| `setup.sh` | Greenfield provisioning: Node 22, fonts, app checkout, PM2, nginx, Let's Encrypt |
 | `ecosystem.config.js` | PM2 process file (secrets loaded from `<app>/.env` via `--env-file`) |
-| `nginx-docseditor.conf` | Reverse proxy site config (HTTP; certbot upgrades it to HTTPS) |
+| `nginx-docseditor.conf` | Reverse proxy site config for fresh installs (HTTP; certbot upgrades to HTTPS) |
 | `.env.example` | Environment template — copy to `<app>/.env` on the server |
+
+## docseditor.bond (live server)
+
+The production box runs **Apache** (it also hosts other sites), so the nginx
+template above was not used there. The equivalent Apache vhost pattern:
+
+```
+<VirtualHost *:80>
+    ServerName docseditor.bond
+    ServerAlias www.docseditor.bond
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:3000/
+    ProxyPassReverse / http://127.0.0.1:3000/
+    Alias /.well-known/acme-challenge/ /var/www/html/.well-known/acme-challenge/
+    <Directory /var/www/html/.well-known/acme-challenge/>
+        Require all granted
+    </Directory>
+</VirtualHost>
+```
+
+then `a2ensite docseditor.bond`, `systemctl reload apache2`, and
+
+```bash
+certbot --apache -d docseditor.bond -d www.docseditor.bond --redirect
+```
 
 ## 1. DNS (do this at your registrar)
 
@@ -23,7 +48,7 @@ previous host:
 (Or a CNAME for `www` → your apex domain if the registrar prefers it.)
 Allow 5–60 minutes for propagation; HTTPS needs the records live.
 
-## 2. Provision the server
+## 2. Provision the server (fresh installs)
 
 On the VPS as root (Ubuntu 22.04/24.04):
 
