@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DocsEditor — Card Designer</title>
+<style>
+  :root {
+    --bg: #0c0f1e; --panel: #151a30; --panel2: #1b2140; --line: #2a3158;
+    --text: #e6eeff; --muted: #8b96b8; --teal: #39d0b4; --amber: #f5a623; --red: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', system-ui, Arial, sans-serif; min-height: 100vh;
+  }
+  header {
+    display: flex; align-items: center; gap: 14px; padding: 16px 28px;
+    background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  header .logo { font-weight: 800; font-size: 20px; letter-spacing: 1px; }
+  header .logo span { color: var(--teal); }
+  header .sub { color: var(--muted); font-size: 13px; }
+  header .spacer { flex: 1; }
+  header button {
+    background: none; border: 1px solid var(--line); color: var(--muted);
+    padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  }
+  header button:hover { color: var(--text); border-color: var(--teal); }
+  main { max-width: 1180px; margin: 0 auto; padding: 26px; display: grid; grid-template-columns: 380px 1fr; gap: 26px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .panel h2 { margin: 0 0 6px; font-size: 15px; letter-spacing: 1px; text-transform: uppercase; color: var(--teal); }
+  .panel .hint { margin: 0 0 16px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+  label { display: block; font-size: 12px; color: var(--muted); letter-spacing: 1px; margin: 14px 0 6px; text-transform: uppercase; }
+  input[type=text] {
+    width: 100%; background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+    border-radius: 9px; padding: 11px 12px; font-size: 14px; outline: none;
+  }
+  input[type=text]:focus { border-color: var(--teal); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .filebox {
+    margin-top: 14px; border: 1.5px dashed var(--line); border-radius: 12px; padding: 18px;
+    text-align: center; cursor: pointer; color: var(--muted); font-size: 13px;
+  }
+  .filebox:hover, .filebox.drag { border-color: var(--teal); color: var(--teal); }
+  .filebox img { max-width: 120px; max-height: 150px; border-radius: 8px; margin-top: 10px; display: block; margin-left: auto; margin-right: auto; }
+  .btn {
+    width: 100%; margin-top: 20px; padding: 13px; border: none; border-radius: 10px;
+    background: var(--teal); color: #06211b; font-weight: 700; font-size: 15px; cursor: pointer; letter-spacing: 0.5px;
+  }
+  .btn:disabled { opacity: 0.5; cursor: wait; }
+  #error { display: none; margin-top: 14px; padding: 11px 13px; border-radius: 9px; background: rgba(255,107,107,0.12); border: 1px solid rgba(255,107,107,0.4); color: var(--red); font-size: 13px; }
+  .template-wrap { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+  .template-wrap img { width: 100%; display: block; }
+  .coord-box { position: absolute; border: 1.5px dashed var(--amber); background: rgba(245,166,35,0.07); }
+  .coord-box span { position: absolute; top: -17px; left: 0; font-size: 10px; color: var(--amber); letter-spacing: 1px; white-space: nowrap; }
+  .toggle {
+    margin-top: 12px; background: none; border: 1px solid var(--line); color: var(--muted);
+    padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
+  }
+  .toggle:hover { color: var(--text); }
+  #resultPanel { margin-top: 26px; }
+  #resultPanel img { width: 100%; border-radius: 10px; border: 1px solid var(--line); }
+  #resultPanel .btn { background: var(--amber); color: #1b1b2f; }
+  .note { margin-top: 14px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .note b { color: var(--amber); }
+  #loginPanel { max-width: 420px; margin: 8vh auto; }
+  #app[hidden], #loginPanel[hidden] { display: none; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="logo">DOCS<span>EDITOR</span></div>
+    <div class="sub">card designer — admin</div>
+    <div class="spacer"></div>
+    <button id="logoutBtn" hidden>Log out</button>
+  </header>
+
+  <!-- admin login (Basic-auth token from /admin/login) -->
+  <div id="loginPanel" class="panel" hidden>
+    <h2>Admin login</h2>
+    <p class="hint">Card generation is restricted to admins. Use the same credentials as the FaceGate admin panel.</p>
+    <label for="loginUser">Username</label>
+    <input type="text" id="loginUser" autocomplete="username">
+    <label for="loginPass">Password</label>
+    <input type="password" id="loginPass" autocomplete="current-password">
+    <button class="btn" id="loginBtn">Sign in</button>
+    <p id="loginError" style="display:none;color:var(--red);font-size:13px;"></p>
+  </div>
+
+  <main id="app" hidden>
+    <!-- input form -->
+    <form class="panel" id="cardForm">
+      <h2>Card details</h2>
+      <p class="hint">Fields are merged onto the base template at the coordinates defined in <code>card-config.json</code>.</p>
+
+      <label for="fName">Name</label>
+      <input type="text" id="fName" name="name" placeholder="e.g. Amani K. Otieno" maxlength="40" required>
+
+      <div class="row">
+        <div>
+          <label for="fDob">Date of birth</label>
+          <input type="text" id="fDob" name="dob" placeholder="DD/MM/YYYY" maxlength="10" required>
+        </div>
+        <div>
+          <label for="fExpiry">Expiry</label>
+          <input type="text" id="fExpiry" name="expiry" placeholder="MM/YYYY" maxlength="7" required>
+        </div>
+      </div>
+
+      <label for="fRole">Role</label>
+      <input type="text" id="fRole" name="role" placeholder="e.g. Community Member" maxlength="32">
+
+      <label for="fMemberId">Member ID <span style="text-transform:none">(optional — auto-generated)</span></label>
+      <input type="text" id="fMemberId" name="memberId" placeholder="e.g. DE-2026-0192" maxlength="24">
+
+      <label>Profile photo</label>
+      <div class="filebox" id="fileBox">
+        <span id="fileLabel">Click to choose or drop a JPEG / PNG / WebP (max 8 MB)</span>
+        <img id="photoPreview" alt="" style="display:none">
+        <input type="file" id="fPhoto" accept="image/jpeg,image/png,image/webp" style="display:none">
+      </div>
+
+      <button class="btn" id="generateBtn" type="submit">Generate card</button>
+      <p id="error"></p>
+    </form>
+
+    <!-- template + result -->
+    <div>
+      <div class="panel">
+        <h2>Base template</h2>
+        <p class="hint">The single template with the coordinate map overlaid. Toggle the overlay to see where each field and the photo land.</p>
+        <div class="template-wrap" id="templateWrap">
+          <img id="templateImg" alt="Base template">
+          <div id="overlay"></div>
+        </div>
+        <button class="toggle" id="toggleBtn" type="button">Show coordinate map</button>
+      </div>
+
+      <div class="panel" id="resultPanel" hidden>
+        <h2>Generated card</h2>
+        <p class="hint">Every generated card is permanently stamped <b>SAMPLE — NOT AN OFFICIAL DOCUMENT</b> (bottom banner + tiled diagonal watermark).</p>
+        <img id="resultImg" alt="Generated card">
+        <button class="btn" id="downloadBtn" type="button">Download PNG</button>
+        <p class="note">Stored server-side for a limited time; the raw uploaded photo is never saved to disk — only the final composed PNG.</p>
+      </div>
+    </div>
+  </main>
+
+<script>
+(function () {
+  'use strict';
+  var TOKEN_KEY = 'docseditor_admin_token';
+  var token = localStorage.getItem(TOKEN_KEY) || '';
+  var layout = null;
+  var lastResult = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var app = $('app'), loginPanel = $('loginPanel'), err = $('error');
+
+  function authHeaders() {
+    return token ? { 'Authorization': 'Bearer ' + token } : {};
+  }
+  function showError(msg) { err.textContent = msg; err.style.display = 'block'; }
+  function clearError() { err.style.display = 'none'; }
+
+  /* ── auth ─────────────────────────────────────────────────────────────── */
+  function showLogin() {
+    app.hidden = true; loginPanel.hidden = false; $('logoutBtn').hidden = true;
+  }
+  function showApp() {
+    loginPanel.hidden = true; app.hidden = false; $('logoutBtn').hidden = false;
+    loadWorkspace();
+  }
+  $('loginBtn').addEventListener('click', function () {
+    var u = $('loginUser').value.trim(), p = $('loginPass').value;
+    fetch('/admin/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: u, pass: p })
+    }).then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+      .then(function (x) {
+        if (!x.ok || !x.body.ok) { $('loginError').style.display = 'block'; $('loginError').textContent = 'Invalid credentials'; return; }
+        token = x.body.token; localStorage.setItem(TOKEN_KEY, token);
+        showApp();
+      }).catch(function () { $('loginError').style.display = 'block'; $('loginError').textContent = 'Network error'; });
+  });
+  $('logoutBtn').addEventListener('click', function () {
+    token = ''; localStorage.removeItem(TOKEN_KEY); showLogin();
+  });
+
+  /* ── api helper: surfaces 401 as a login prompt ───────────────────────── */
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({}, opts.headers, authHeaders());
+    return fetch(path, opts).then(function (r) {
+      if (r.status === 401) { showLogin(); throw new Error('Admin session required'); }
+      return r;
+    });
+  }
+
+  /* ── template + coordinate overlay ────────────────────────────────────── */
+  function loadWorkspace() {
+    api('/api/cards/layout').then(function (r) { return r.json(); }).then(function (cfg) {
+      layout = cfg;
+      drawOverlay();
+    }).catch(function () {});
+    api('/api/cards/template-preview').then(function (r) { return r.blob(); }).then(function (blob) {
+      $('templateImg').src = URL.createObjectURL(blob);
+    }).catch(function () {});
+  }
+
+  function drawOverlay() {
+    if (!layout) return;
+    var overlay = $('overlay');
+    overlay.innerHTML = '';
+    function box(label, x, y, w, h) {
+      var d = document.createElement('div');
+      d.className = 'coord-box';
+      d.style.left = (x / layout.canvas.width * 100) + '%';
+      d.style.top = (y / layout.canvas.height * 100) + '%';
+      d.style.width = (w / layout.canvas.width * 100) + '%';
+      d.style.height = (h / layout.canvas.height * 100) + '%';
+      var s = document.createElement('span');
+      s.textContent = label;
+      d.appendChild(s);
+      overlay.appendChild(d);
+    }
+    box('PHOTO', layout.photo.x, layout.photo.y, layout.photo.width, layout.photo.height);
+    Object.keys(layout.fields).forEach(function (key) {
+      var f = layout.fields[key];
+      box(key.toUpperCase(), f.x, f.y - f.fontSize, f.maxWidth, Math.ceil(f.fontSize * 1.15));
+    });
+  }
+  var overlayVisible = false;
+  $('toggleBtn').addEventListener('click', function () {
+    overlayVisible = !overlayVisible;
+    $('overlay').style.display = overlayVisible ? 'block' : 'none';
+    $('toggleBtn').textContent = overlayVisible ? 'Hide coordinate map' : 'Show coordinate map';
+  });
+  $('overlay').style.display = 'none';
+
+  /* ── photo picker with local preview ──────────────────────────────────── */
+  var fileBox = $('fileBox'), photoInput = $('fPhoto');
+  fileBox.addEventListener('click', function () { photoInput.click(); });
+  ['dragover', 'dragenter'].forEach(function (ev) {
+    fileBox.addEventListener(ev, function (e) { e.preventDefault(); fileBox.classList.add('drag'); });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    fileBox.addEventListener(ev, function (e) { e.preventDefault(); fileBox.classList.remove('drag'); });
+  });
+  fileBox.addEventListener('drop', function (e) {
+    if (e.dataTransfer.files && e.dataTransfer.files.length) { photoInput.files = e.dataTransfer.files; showPhotoPreview(); }
+  });
+  photoInput.addEventListener('change', showPhotoPreview);
+  function showPhotoPreview() {
+    var f = photoInput.files && photoInput.files[0];
+    if (!f) return;
+    $('fileLabel').textContent = f.name + ' (' + Math.round(f.size / 1024) + ' KB)';
+    var img = $('photoPreview');
+    img.style.display = 'block';
+    img.src = URL.createObjectURL(f);
+  }
+
+  /* ── generate ─────────────────────────────────────────────────────────── */
+  $('cardForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    clearError();
+    var file = photoInput.files && photoInput.files[0];
+    if (!file) { showError('Please choose a profile photo.'); return; }
+    var fd = new FormData();
+    ['name', 'dob', 'expiry', 'role', 'memberId'].forEach(function (k) {
+      var v = $(k === 'dob' ? 'fDob' : k === 'expiry' ? 'fExpiry' : k === 'name' ? 'fName' : k === 'role' ? 'fRole' : 'fMemberId').value.trim();
+      if (v) fd.append(k, v);
+    });
+    fd.append('photo', file);
+
+    var btn = $('generateBtn');
+    btn.disabled = true; btn.textContent = 'Generating…';
+    api('/api/cards/generate', { method: 'POST', body: fd })
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+      .then(function (x) {
+        if (!x.ok || !x.body.ok) throw new Error(x.body.message || x.body.error || 'Generation failed');
+        lastResult = x.body;
+        return api(x.body.previewUrl).then(function (r) { return r.blob(); }).then(function (blob) {
+          $('resultImg').src = URL.createObjectURL(blob);
+          $('resultPanel').hidden = false;
+          $('resultPanel').scrollIntoView({ behavior: 'smooth' });
+        });
+      })
+      .catch(function (e2) { if (e2.message !== 'Admin session required') showError(e2.message); })
+      .then(function () { btn.disabled = false; btn.textContent = 'Generate card'; });
+  });
+
+  $('downloadBtn').addEventListener('click', function () {
+    if (!lastResult) return;
+    api(lastResult.downloadUrl).then(function (r) { return r.blob(); }).then(function (blob) {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'docseditor-card-' + lastResult.cardId + '.png';
+      document.body.appendChild(a); a.click(); a.remove();
+    });
+  });
+
+  /* boot: try an authenticated call to decide which panel to show */
+  if (token) {
+    api('/api/cards/layout').then(function (r) {
+      if (r.ok) showApp(); else showLogin();
+    }).catch(showLogin);
+  } else {
+    showLogin();
+  }
+})();
+</script>
+</body>
+</html>

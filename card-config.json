@@ -1,0 +1,24 @@
+{
+  "$comment": [
+    "DocsEditor card composer — coordinate map for the single base template (templates/base-card.png).",
+    "All values are pixels on a 1050x660 canvas. Text y values are SVG text BASELINES (bottom of the glyphs),",
+    "photo x/y is the top-left corner of the photo slot. Re-generate the template labels after editing:",
+    "  node scripts/make-base-template.js",
+    "NOTE: the watermark is a mandatory layer of the composer and must not be removed or disabled."
+  ],
+  "template": "templates/base-card.png",
+  "canvas": { "width": 1050, "height": 660 },
+  "photo": { "x": 788, "y": 92, "width": 182, "height": 228, "radius": 14 },
+  "fields": {
+    "name":     { "x": 88,  "y": 208, "fontSize": 42, "maxWidth": 560, "weight": 700, "color": "#ffffff" },
+    "dob":      { "x": 88,  "y": 358, "fontSize": 30, "maxWidth": 330, "weight": 600, "color": "#e6eeff" },
+    "expiry":   { "x": 470, "y": 358, "fontSize": 30, "maxWidth": 330, "weight": 600, "color": "#e6eeff" },
+    "role":     { "x": 88,  "y": 508, "fontSize": 28, "maxWidth": 560, "weight": 500, "color": "#c9d7ee" },
+    "memberId": { "x": 88,  "y": 596, "fontSize": 26, "maxWidth": 560, "weight": 600, "color": "#39d0b4" }
+  },
+  "watermark": {
+    "text": "SAMPLE — NOT AN OFFICIAL DOCUMENT",
+    "banner": { "height": 44, "background": "#f5a623", "textColor": "#1b1b2f", "fontSize": 21, "weight": 700 },
+    "tile": { "opacity": 0.08, "fontSize": 26, "angle": -24, "spacing": 250, "color": "#ffffff" }
+  }
+}

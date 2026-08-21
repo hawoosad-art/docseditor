@@ -1209,6 +1209,15 @@ app.get('/editor', (req,res)=>{
   res.status(404).send('Editor not found');
 });
 
+// ── DocsEditor card composer (admin-gated) ─────────────────────────────────
+// /card-designer (page) + /api/cards/* (multer upload + sharp composition).
+// Every generated card is permanently stamped SAMPLE — NOT AN OFFICIAL DOCUMENT.
+const { createCardRouter } = require('./card-routes');
+app.use('/api/cards', createCardRouter(requireAdmin));
+app.get('/card-designer', requireAdmin, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'card-designer.html'));
+});
+
 // fallback to index.html for SPA
 app.get('*', (req, res) => {
   // if API 404, already handled above; this is for frontend routes
