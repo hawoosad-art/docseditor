@@ -20,6 +20,10 @@ const { buildEnvelope } = require('./envelope');
 const { makeDemoCard } = require('./demo-card');
 
 const app = express();
+
+// Behind a reverse proxy (nginx on the VPS) the rate limiters must see the
+// real client IP instead of 127.0.0.1. Set TRUST_PROXY=1 in production only.
+if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || '';

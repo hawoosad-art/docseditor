@@ -9,6 +9,12 @@ DocsEditor is the Render-ready version of the FaceGate PSD editor and safe ficti
 
 Open /editor for the PSD editor. Admin login is at the public home page; after login, the APK Build panel includes an upload control. Uploaded files are available at /files/FaceGate.apk.
 
+## VPS deployment
+
+Full playbook (DNS records, provisioning script, nginx + PM2 + Let's Encrypt) in [deploy/README.md](deploy/README.md):
+
+    bash deploy/setup.sh yourdomain.com
+
 ## Render
 
 The included render.yaml uses npm ci, npm start, and /api/health. Add the secret environment variables in Render before going live.
