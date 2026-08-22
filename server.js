@@ -153,6 +153,7 @@ const swishyUpload = multer({
 app.use(cors());
 app.use(express.json({ limit: '256kb' }));
 app.use(express.urlencoded({ extended: true }));
+app.get(['/editor', '/editor.html'], (req, res) => res.redirect(302, '/card-designer#studio'));
 
 // simple logger
 app.use((req, _, next) => {
@@ -1216,8 +1217,8 @@ const studioLimiter = rateLimit({
 });
 const studioUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
 const { studioAsk, aiConfigured: studioAiConfigured } = require('./editor-ai');
-app.get('/api/studio/status', (req, res) => res.json({ ok: true, ai: studioAiConfigured() }));
-app.post('/api/studio/ai', studioLimiter, studioUpload.single('preview'), async (req, res) => {
+app.get('/api/studio/status', requireAdmin, (req, res) => res.json({ ok: true, ai: studioAiConfigured() }));
+app.post('/api/studio/ai', studioLimiter, requireAdmin, studioUpload.single('preview'), async (req, res) => {
   try {
     if (!req.file?.buffer) return res.status(400).json({ ok: false, error: 'A canvas preview image is required' });
     let layers = [];
@@ -1227,7 +1228,6 @@ app.post('/api/studio/ai', studioLimiter, studioUpload.single('preview'), async 
       prompt: req.body.prompt || '',
       mode: req.body.mode || 'direct',
       layers,
-      apiKey: req.body.apiKey || req.headers['x-openai-key'] || '',
     });
     const status = result.refused ? 400 : (result.ok ? 200 : (result.code === 'AI_UNAVAILABLE' ? 503 : 422));
     return res.status(status).json(result);

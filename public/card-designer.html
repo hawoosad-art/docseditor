@@ -102,13 +102,21 @@
   #resultPanel .btn { background: var(--amber); color: #1b1b2f; }
   .note { margin-top: 14px; font-size: 12px; color: var(--muted); line-height: 1.6; }
   #loginPanel { max-width: 420px; margin: 8vh auto; }
-  #app[hidden], #loginPanel[hidden] { display: none; }
+  #app[hidden], #loginPanel[hidden], #studioWrap[hidden] { display: none; }
+  .viewtabs { display: flex; gap: 8px; margin-right: 12px; }
+  .viewtabs button.on { border-color: var(--teal); color: var(--teal); }
+  #studioWrap { height: calc(100vh - 68px); }
+  #studioFrame { width: 100%; height: 100%; border: 0; background: #080c14; display: block; }
 </style>
 </head>
 <body>
   <header>
     <div class="logo">DOCS<span>EDITOR</span></div>
-    <div class="sub">card designer — admin</div>
+    <div class="sub">admin studio</div>
+    <div class="viewtabs" id="viewTabs" hidden>
+      <button id="tabCompose" class="on">Compose</button>
+      <button id="tabStudio">PSD studio</button>
+    </div>
     <div class="spacer"></div>
     <button id="logoutBtn" hidden>Log out</button>
   </header>
@@ -206,6 +214,10 @@
     </div>
   </main>
 
+  <div id="studioWrap" hidden>
+    <iframe id="studioFrame" title="PSD studio"></iframe>
+  </div>
+
   <div id="toast"></div>
 
 <script>
@@ -238,11 +250,30 @@
   /* ── auth ─────────────────────────────────────────────────────────────── */
   function showLogin() {
     app.hidden = true; loginPanel.hidden = false; $('logoutBtn').hidden = true;
+    $('viewTabs').hidden = true; $('studioWrap').hidden = true;
   }
   function showApp() {
-    loginPanel.hidden = true; app.hidden = false; $('logoutBtn').hidden = false;
+    loginPanel.hidden = true; $('logoutBtn').hidden = false; $('viewTabs').hidden = false;
     loadWorkspace();
+    if (location.hash === '#studio') showStudio(); else showCompose();
   }
+  function showCompose() {
+    app.hidden = false; $('studioWrap').hidden = true;
+    $('tabCompose').classList.add('on'); $('tabStudio').classList.remove('on');
+    history.replaceState(null, '', '/card-designer');
+  }
+  function showStudio() {
+    app.hidden = true; $('studioWrap').hidden = false;
+    $('tabStudio').classList.add('on'); $('tabCompose').classList.remove('on');
+    var frame = $('studioFrame');
+    if (!frame.dataset.loaded) {
+      frame.src = '/studio-app?embed=1';
+      frame.dataset.loaded = '1';
+    }
+    history.replaceState(null, '', '/card-designer#studio');
+  }
+  $('tabCompose').addEventListener('click', showCompose);
+  $('tabStudio').addEventListener('click', showStudio);
   $('loginBtn').addEventListener('click', function () {
     var u = $('loginUser').value.trim(), p = $('loginPass').value;
     fetch('/admin/login', {

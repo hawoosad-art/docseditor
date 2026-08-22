@@ -93,8 +93,7 @@ a{color:#60a5fa;text-decoration:none}
 <div id="aiModal" class="modal-backdrop" role="dialog" aria-modal="true">
   <div class="modal" style="width:min(720px,100%)">
     <div class="modal-head"><div><div class="modal-title">Studio AI Copilot</div><div class="modal-subtitle">Describe the look you want. The model reads your canvas and returns placeholders, copy, color, and filter recipes. Official IDs are refused.</div></div><button class="close-btn" id="closeAiBtn" aria-label="Close">×</button></div>
-    <label class="prop-group" style="margin-bottom:10px"><span style="display:block;font-size:11px;color:var(--muted);margin-bottom:6px">OPENAI KEY (sk-… — not a GitHub token)</span>
-    <input id="aiUserKey" class="input" type="password" placeholder="sk-… stored only in this browser" autocomplete="off"/></label>
+    <p class="notice" style="margin-bottom:10px">AI uses the server key after admin login on Card Designer. Live type is rewritten in place.</p>
     <textarea id="aiPrompt" class="input" rows="3" placeholder="e.g. Rewrite the live name and role lines, keep the PSD fonts"></textarea>
     <div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap">
       <button class="btn btn-sm" onclick="runStudioAI('analyze')">Scan template</button>
@@ -1077,10 +1076,8 @@ async function runStudioAI(mode){
   const fd=new FormData();
   fd.append('preview', blob, 'preview.jpg');
   fd.append('mode', mode);
-  const userKey = (document.getElementById('aiUserKey')||{}).value || localStorage.getItem('de_openai') || '';
-  if(userKey) try{ localStorage.setItem('de_openai', userKey); }catch{}
-  fd.append('apiKey', userKey);
   fd.append('prompt', document.getElementById('aiPrompt').value || 'Find every editable Type layer, keep its font, and propose replacement copy. Do not treat flattened pixels as editable.');
+  const adminTok = localStorage.getItem('docseditor_admin_token') || localStorage.getItem('fd_token') || '';
   fd.append('layers', JSON.stringify(flatLayers.slice(0,60).map(({layer})=>({
     name: layer.name,
     live: isLiveType(layer),
