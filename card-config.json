@@ -1,21 +1,17 @@
 {
   "$comment": [
-    "DocsEditor card composer — default coordinate map for the bundled starter template (templates/base-card.png).",
-    "All values are pixels. Text y values are SVG text BASELINES (bottom of the glyphs);",
-    "photo x/y is the top-left corner of the photo slot.",
-    "Admins can upload their organization's own template and save a custom layout from the",
-    "card designer UI; that custom layout is stored separately (uploads/templates/custom-layout.json)",
-    "and overrides these defaults. Re-generate the starter template labels after editing:",
-    "  node scripts/make-base-template.js"
+    "DocsEditor card composer — default coordinate map.",
+    "Text y values are SVG baselines. photo x/y is top-left.",
+    "Optional extra fields (nationality, sex, address, issued, signature) render when provided."
   ],
   "template": "templates/base-card.png",
   "canvas": { "width": 1050, "height": 660 },
   "photo": { "x": 788, "y": 92, "width": 182, "height": 228, "radius": 14 },
   "fields": {
-    "name":     { "x": 88,  "y": 208, "fontSize": 42, "maxWidth": 560, "weight": 700, "color": "#ffffff" },
-    "dob":      { "x": 88,  "y": 358, "fontSize": 30, "maxWidth": 330, "weight": 600, "color": "#e6eeff" },
-    "expiry":   { "x": 470, "y": 358, "fontSize": 30, "maxWidth": 330, "weight": 600, "color": "#e6eeff" },
-    "role":     { "x": 88,  "y": 508, "fontSize": 28, "maxWidth": 560, "weight": 500, "color": "#c9d7ee" },
-    "memberId": { "x": 88,  "y": 596, "fontSize": 26, "maxWidth": 560, "weight": 600, "color": "#39d0b4" }
+    "name":     { "x": 88,  "y": 208, "fontSize": 42, "maxWidth": 560, "weight": 700, "color": "#ffffff", "font": "Inter" },
+    "dob":      { "x": 88,  "y": 358, "fontSize": 30, "maxWidth": 330, "weight": 600, "color": "#e6eeff", "font": "Inter" },
+    "expiry":   { "x": 470, "y": 358, "fontSize": 30, "maxWidth": 330, "weight": 600, "color": "#e6eeff", "font": "Inter" },
+    "role":     { "x": 88,  "y": 508, "fontSize": 28, "maxWidth": 560, "weight": 500, "color": "#c9d7ee", "font": "Inter" },
+    "memberId": { "x": 88,  "y": 596, "fontSize": 26, "maxWidth": 560, "weight": 600, "color": "#39d0b4", "font": "JetBrains Mono" }
   }
 }

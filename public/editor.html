@@ -4,8 +4,11 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <link rel="icon" type="image/webp" href="/ic_launcher_round.webp"/>
-<title>PSD Editor — facedocs.bond</title>
-<meta name="description" content="Upload PSD, edit layers, export as PNG — FaceGate Editor"/>
+<title>DocsEditor — template studio</title>
+<meta name="description" content="Edit PSD and image templates in the browser — fonts, placeholders, front & back — no Photoshop required"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Oswald:wght@400;600;700&family=Playfair+Display:wght@500;700&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;600&family=Montserrat:wght@500;700&family=Poppins:wght@500;700&family=Source+Sans+3:wght@400;600;700&family=Noto+Sans:wght@400;600;700&family=Noto+Serif:wght@400;700&family=Merriweather:wght@400;700&family=Lato:wght@400;700&family=Open+Sans:wght@400;600;700&family=Raleway:wght@500;700&family=Bebas+Neue&family=DM+Sans:wght@400;600;700&family=IBM+Plex+Sans:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/ag-psd@31.0.2/dist/bundle.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -87,12 +90,17 @@ a{color:#60a5fa;text-decoration:none}
 <nav class="nav">
   <a href="/" style="font-weight:800;display:flex;align-items:center;gap:9px">
     <img src="/ic_launcher_round.webp" alt="FaceGate" style="width:28px;height:28px;border-radius:8px;object-fit:cover;border:1px solid #1f2937;display:block"/>
-    FaceGate <span style="color:var(--muted);font-weight:500">Editor</span>
+    DocsEditor <span style="color:var(--muted);font-weight:500">Studio</span>
   </a>
-  <div style="display:flex;gap:8px;align-items:center">
-    <button class="btn btn-sm" id="uploadBtn">📂 Upload PSD</button>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <div id="sideTabs" style="display:flex;background:#0b1220;border:1px solid var(--border);border-radius:9px;overflow:hidden">
+      <button class="btn btn-sm" id="frontTab" style="border:0;border-radius:0;background:#1d4ed8;color:#fff">Front</button>
+      <button class="btn btn-sm" id="backTab" style="border:0;border-radius:0">Back</button>
+    </div>
+    <button class="btn btn-sm" id="uploadBtn">📂 Open template</button>
     <button class="btn btn-sm" id="demoCardBtn">✨ Safe demo card</button>
     <button class="btn btn-primary btn-sm" onclick="exportPNG()">⬇ Export PNG</button>
+    <button class="btn btn-sm" onclick="exportBothSides()">⬇ Front + back</button>
     <button class="btn btn-sm hidden" id="saveServerBtn" onclick="uploadPsdToServer()">☁ Save to VPS</button>
     <a class="btn btn-sm" href="/download">Download APK</a>
   </div>
@@ -106,9 +114,9 @@ a{color:#60a5fa;text-decoration:none}
       <div id="dropZone" class="drop" style="position:relative;overflow:hidden">
         <input id="psdFile" type="file" style="position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:0"/>
         <div style="font-size:22px">🎨</div>
-        <div style="margin-top:6px;font-weight:600">Drop .psd here</div>
-        <div style="font-size:11px;margin-top:2px">or click to browse — choose <b>Files</b></div>
-        <div class="kbd" style="margin:8px auto 0;display:inline-block">.psd → edit → PNG</div>
+        <div style="margin-top:6px;font-weight:600">Drop PSD / PNG / JPG</div>
+        <div style="font-size:11px;margin-top:2px">No Photoshop needed — edit placeholders, fonts, photos</div>
+        <div class="kbd" style="margin:8px auto 0;display:inline-block">front + back • fonts • PNG</div>
         <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4">On phone: tap <b>Browse</b> / <b>Files</b> at the top<br>then go to Downloads/Documents to find your .psd</div>
         <div id="psdStatus" style="font-size:12px;color:#60a5fa;margin-top:8px;min-height:16px;font-weight:600"></div>
       </div>
@@ -194,13 +202,75 @@ function hideLoading(){
   if(ov) ov.classList.remove('active');
 }
 
+const FONT_CATALOG = [
+  'Inter','Roboto','Open Sans','Lato','Montserrat','Poppins','Source Sans 3','DM Sans','IBM Plex Sans','Noto Sans',
+  'Oswald','Bebas Neue','Raleway','Playfair Display','Merriweather','Noto Serif','Roboto Mono','JetBrains Mono'
+];
+const PLACEHOLDERS = [
+  ['{{NAME}}','Name'],['{{DOB}}','DOB'],['{{EXPIRY}}','Expiry'],['{{ROLE}}','Role'],['{{ID}}','ID'],
+  ['{{ORG}}','Org'],['{{NATIONALITY}}','Nationality'],['{{SEX}}','Sex'],['{{ADDRESS}}','Address'],
+  ['{{ISSUED}}','Issued'],['{{SIGNATURE}}','Signature'],['{{PHONE}}','Phone'],['{{EMAIL}}','Email']
+];
+const FONT_SELECT = document.getElementById('txtFont');
+if (FONT_SELECT) {
+  FONT_CATALOG.forEach(f => { const o=document.createElement('option'); o.value=f; o.textContent=f; o.style.fontFamily=f; FONT_SELECT.appendChild(o); });
+}
+const phChips = document.getElementById('phChips');
+if (phChips) {
+  PLACEHOLDERS.forEach(([token,label])=>{
+    const b=document.createElement('button');
+    b.type='button'; b.className='btn btn-sm'; b.textContent=label; b.style.padding='4px 7px'; b.style.fontSize='11px';
+    b.onclick=()=>{ const t=document.getElementById('txtContent'); t.value=(t.value?t.value+' ':'')+token; };
+    phChips.appendChild(b);
+  });
+}
+
+let sides = { front: { psd:null, file:null, flat:[], edited:new Set(), selected:null }, back: { psd:null, file:null, flat:[], edited:new Set(), selected:null } };
+let currentSide = 'front';
+function active(){ return sides[currentSide]; }
 let psd = null;
 let currentPsdFile = null;
-let flatLayers = []; // {idx, layer, depth}
+let flatLayers = [];
 let selected = null;
-let editedLayers = new Set(); // track edited layers to draw on top of full
+let editedLayers = new Set();
 const canvas = document.getElementById('psdCanvas');
 const ctx = canvas.getContext('2d');
+
+function persistSide(){
+  const s = active();
+  s.psd = psd; s.file = currentPsdFile; s.flat = flatLayers; s.edited = editedLayers; s.selected = selected;
+}
+function loadSide(name){
+  persistSide();
+  currentSide = name;
+  const s = active();
+  psd = s.psd; currentPsdFile = s.file; flatLayers = s.flat; editedLayers = s.edited; selected = s.selected;
+  document.getElementById('frontTab').style.background = name==='front' ? '#1d4ed8' : '';
+  document.getElementById('frontTab').style.color = name==='front' ? '#fff' : '';
+  document.getElementById('backTab').style.background = name==='back' ? '#1d4ed8' : '';
+  document.getElementById('backTab').style.color = name==='back' ? '#fff' : '';
+  if(psd){ document.getElementById('canvasCard').style.display='block'; document.getElementById('placeholder').style.display='none'; buildLayerList(); render(); }
+  else { document.getElementById('canvasCard').style.display='none'; document.getElementById('placeholder').style.display='block'; document.getElementById('layers').innerHTML=''; document.getElementById('layerCount').textContent='0'; }
+}
+document.getElementById('frontTab').onclick=()=>loadSide('front');
+document.getElementById('backTab').onclick=()=>loadSide('back');
+
+function exportBothSides(){
+  persistSide();
+  if(!sides.front.psd && !sides.back.psd){ alert('Load a front and/or back template first'); return; }
+  const run = (name)=>{
+    if(!sides[name].psd) return Promise.resolve();
+    loadSide(name);
+    return new Promise(res=>{
+      render(true);
+      canvas.toBlob(blob=>{
+        if(blob){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='docseditor-'+name+'.png'; document.body.appendChild(a); a.click(); a.remove(); }
+        render(); res();
+      },'image/png');
+    });
+  };
+  run('front').then(()=>run('back'));
+}
 
 function flatten(layers, depth=0, out=[]){
   layers.forEach(l=>{
@@ -456,11 +526,18 @@ function applyText(){
     const c = document.createElement('canvas');
     c.width = lw; c.height = lh;
     const g = c.getContext('2d');
+    const fontName = (document.getElementById('txtFont')||{}).value || 'Inter';
+    const weight = (document.getElementById('txtWeight')||{}).value || '700';
+    const align = (document.getElementById('txtAlign')||{}).value || 'left';
+    const tracking = parseFloat((document.getElementById('txtTracking')||{}).value) || 0;
     g.fillStyle = newColor;
-    g.font = newSize + 'px Inter, sans-serif';
+    g.font = weight + ' ' + newSize + 'px "' + fontName + '", Inter, sans-serif';
     g.textBaseline = 'top';
+    g.textAlign = align;
+    if (g.letterSpacing !== undefined) g.letterSpacing = tracking + 'px';
     const lines = newTxt.split('\n');
-    lines.forEach((ln, i) => g.fillText(ln, 4, 4 + i * (newSize * 1.3)));
+    const x = align==='center' ? lw/2 : align==='right' ? lw-6 : 4;
+    lines.forEach((ln, i) => g.fillText(ln, x, 4 + i * (newSize * 1.3)));
 
     if(!layer._originalCanvas && layer.canvas) layer._originalCanvas = layer.canvas;
     layer.canvas = c;
@@ -603,6 +680,7 @@ async function handleFile(file){
     showStatus('📄 ' + file.name + ' (' + (file.size/1024).toFixed(1) + ' KB)', '#60a5fa');
     showLoading('Reading ' + file.name + '…');
     console.log('handleFile:', file.name, file.size, file.type);
+    persistSide();
     currentPsdFile=file;
     document.getElementById('saveServerBtn').classList.remove('hidden');
 
@@ -637,6 +715,40 @@ async function handleFile(file){
     }
 
     console.log('File read OK:', buf.byteLength, 'bytes');
+    const isRaster = /\.(png|jpe?g|webp|gif)$/i.test(file.name) || /image\/(png|jpeg|webp|gif)/.test(file.type);
+    if(isRaster){
+      showLoading('Opening image as a template…');
+      const blob = new Blob([buf], { type: file.type || 'image/png' });
+      const url = URL.createObjectURL(blob);
+      const img = await new Promise((resolve, reject)=>{
+        const im = new Image();
+        im.onload = ()=>resolve(im);
+        im.onerror = ()=>reject(new Error('Could not decode image'));
+        im.src = url;
+      });
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      c.getContext('2d').drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      const rasterPsd = {
+        name: file.name, width: c.width, height: c.height, canvas: c,
+        children: [
+          { name: 'Background', left:0, top:0, right:c.width, bottom:c.height, canvas:c, hidden:false, opacity:255 },
+          { name: '{{NAME}}', text:{ text:'{{NAME}}', style:{ fontSize:32, fillColor:[1,1,1] } }, left:40, top:40, right:Math.min(c.width-20, 420), bottom:90, hidden:false, opacity:255 },
+          { name: 'PHOTO', left:c.width-220, top:40, right:c.width-40, bottom:260, hidden:false, opacity:255 }
+        ]
+      };
+      psd = rasterPsd;
+      flatLayers = flatten(psd.children);
+      document.getElementById('canvasCard').style.display='block';
+      document.getElementById('canvasLabel').classList.remove('hidden');
+      document.getElementById('placeholder').style.display='none';
+      buildLayerList(); render(); persistSide();
+      showStatus('✅ ' + currentSide.toUpperCase() + ' · image template ' + c.width + '×' + c.height, '#34d399');
+      hideLoading();
+      return;
+    }
+
     showLoading('Parsing PSD (' + (buf.byteLength/1024).toFixed(0) + ' KB)…');
 
     // ── Parse PSD with ag-psd ──

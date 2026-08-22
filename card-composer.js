@@ -31,7 +31,14 @@ const DEFAULT_TEMPLATE = path.join(__dirname, defaultConfig.template);
 const CUSTOM_TEMPLATE = path.join(TEMPLATE_DIR, 'custom-template.png');
 const CUSTOM_LAYOUT_FILE = path.join(TEMPLATE_DIR, 'custom-layout.json');
 
-const FONT_FAMILY = "'DejaVu Sans', 'Liberation Sans', 'Noto Sans', Arial, sans-serif";
+const FONT_FAMILY = "'DejaVu Sans', 'Liberation Sans', 'Noto Sans', Inter, Arial, sans-serif";
+const FONT_STACKS = {
+  Inter: FONT_FAMILY,
+  'DejaVu Sans': FONT_FAMILY,
+  'JetBrains Mono': "'DejaVu Sans Mono', 'Liberation Mono', 'Courier New', monospace",
+  Georgia: "Georgia, 'Times New Roman', serif",
+  Oswald: "'DejaVu Sans', Inter, Arial, sans-serif",
+};
 /** Rough average glyph advance for sans-serif fonts — used only to pre-shrink text. */
 const AVG_GLYPH_WIDTH = 0.62;
 /** Never render below this size; overflow is then clamped with textLength. */
