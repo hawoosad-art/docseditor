@@ -7,7 +7,7 @@ DocsEditor is the Render-ready version of the FaceGate PSD editor and safe ficti
     npm ci
     ADMIN_USER=admin ADMIN_PASS='choose-a-password' OPENAI_API_KEY='...' npm start
 
-Open /editor for the template studio (PSD or PNG/JPEG, front + back, Google fonts, placeholder chips). Admin login is at the public home page; after login, the APK Build panel includes an upload control. Uploaded files are available at /files/FaceGate.apk.
+Open /editor for the template studio (PSD or PNG/JPEG, front + back, Google fonts, placeholder chips, undo/zoom, look presets, and Studio AI Copilot via `POST /api/studio/ai`). Admin login is at the public home page; after login, the APK Build panel includes an upload control. Uploaded files are available at /files/FaceGate.apk.
 
 ## VPS deployment
 
