@@ -184,10 +184,22 @@ a{color:#60a5fa;text-decoration:none}
     <div class="panel-body" id="props">
       <div id="noSel" style="color:var(--muted);font-size:13px;text-align:center;margin-top:20px">Select a layer on the left to edit.</div>
 
+      <div id="liveTypeBox" style="margin-bottom:14px;padding:10px;border:1px solid var(--border);border-radius:10px;background:rgba(124,58,237,.08)">
+        <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#c4b5fd;font-weight:700;margin-bottom:8px">Live type in this PSD</div>
+        <div id="liveTypeList" style="display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--muted)">Open a PSD with real text layers (not flattened).</div>
+      </div>
       <div id="textProps" class="hidden">
         <div class="prop-group">
-          <label>Text</label>
-          <textarea id="txtContent" class="input" rows="3" placeholder="Layer text"></textarea>
+          <label>Live text (not flattened)</label>
+          <textarea id="txtContent" class="input" rows="3" placeholder="Edit the pre-written type"></textarea>
+        </div>
+        <div class="prop-group">
+          <label>Quick placeholders</label>
+          <div id="phChips" style="display:flex;flex-wrap:wrap;gap:5px"></div>
+        </div>
+        <div class="prop-group">
+          <label>Font (PSD font shown first)</label>
+          <select id="txtFont" class="input"></select>
         </div>
         <div class="prop-row">
           <div class="prop-group" style="flex:1">
@@ -199,7 +211,30 @@ a{color:#60a5fa;text-decoration:none}
             <input id="txtColor" type="color" class="input" style="padding:4px;height:38px"/>
           </div>
         </div>
-        <button class="btn btn-primary" style="width:100%" onclick="applyText()">Apply Text</button>
+        <div class="prop-row">
+          <div class="prop-group" style="flex:1">
+            <label>Weight</label>
+            <select id="txtWeight" class="input">
+              <option value="400">Regular</option>
+              <option value="600">Semibold</option>
+              <option value="700" selected>Bold</option>
+              <option value="800">Black</option>
+            </select>
+          </div>
+          <div class="prop-group" style="flex:1">
+            <label>Align</label>
+            <select id="txtAlign" class="input">
+              <option value="left">Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
+        </div>
+        <div class="prop-group">
+          <label>Letter spacing</label>
+          <input id="txtTracking" type="number" class="input" value="0" step="0.2"/>
+        </div>
+        <button class="btn btn-primary" style="width:100%" onclick="applyText()">Apply live text</button>
       </div>
 
       <div id="imageProps" class="hidden">
@@ -530,6 +565,14 @@ function selectLayer(idx){
     }catch{}
     document.getElementById('txtSize').value = size;
     document.getElementById('txtColor').value = color;
+    const meta = readPsdFont(layer);
+    const fs=document.getElementById('txtFont');
+    if(fs){
+      if(meta.font && ![...fs.options].some(o=>o.value===meta.font)){
+        const o=document.createElement('option'); o.value=meta.font; o.textContent=meta.font+' (from PSD)'; fs.prepend(o);
+      }
+      if(meta.font) fs.value = meta.font;
+    }
   }
 }
 
@@ -914,12 +957,64 @@ demoForm.addEventListener('submit',async function(e){
 });
 
 // Log that the page is ready and ag-psd is available
-console.log('Editor ready. ag-psd available:', !!(window.AgPsd || window.agPsd || window.ag_psd));
-</script>
-</body>
-</html>
-ath.round(psd.height*viewZoom)+'px';
+
+function readPsdFont(layer){
+  const t = layer && layer.text;
+  if(!t) return { font:'Inter', size:24, color:'#ffffff', text:'', live:false };
+  let text = t.text || t.txt || '';
+  if(typeof text !== 'string' && t.paragraphs) text = t.paragraphs.map(p=>p.text||'').join('\n');
+  let size = 24, color='#ffffff', font='Inter';
+  try{
+    const st = t.style || (t.styles && t.styles[0] && t.styles[0].style) || {};
+    if(st.fontSize) size = parseInt(st.fontSize);
+    if(st.fillColor) color = rgbToHex(st.fillColor);
+    const fn = (st.font && (st.font.name || st.font.family)) || st.fontName || st.fontFamily;
+    if(fn) font = String(fn).replace(/-/g,' ');
+  }catch{}
+  return { font, size, color, text:String(text||''), live:true };
+}
+function isLiveType(layer){ return !!(layer && layer.text && !layer.children); }
+function rebuildLiveTypePanel(){
+  const box = document.getElementById('liveTypeList');
+  if(!box) return;
+  const lives = flatLayers.map((it,idx)=>({it,idx})).filter(x=>isLiveType(x.it.layer));
+  if(!lives.length){
+    box.innerHTML = 'No live type found. This file is flattened — add text with ＋ Text, or open a PSD that still has Type layers.';
+    return;
   }
+  box.innerHTML = '';
+  lives.forEach(({it,idx})=>{
+    const meta = readPsdFont(it.layer);
+    const wrap = document.createElement('div');
+    wrap.style.cssText='border:1px solid #2a3158;border-radius:8px;padding:8px;background:#0b1220';
+    wrap.innerHTML = '<div style="font-weight:700;color:#e5e7eb;margin-bottom:4px">'+(it.layer.name||'Type')+' <span class="kbd">'+meta.font+'</span></div>';
+    const inp = document.createElement('input');
+    inp.className='input';
+    inp.value = meta.text;
+    inp.placeholder = 'Edit this live line';
+    inp.onfocus = ()=>selectLayer(idx);
+    inp.onchange = ()=>{
+      selectLayer(idx);
+      const t=document.getElementById('txtContent');
+      if(t) t.value = inp.value;
+      applyText();
+    };
+    wrap.appendChild(inp);
+    box.appendChild(wrap);
+  });
+}
+
+let viewZoom = 1;
+let history = [];
+let future = [];
+function snapshot(){
+  if(!psd) return;
+  try{ history.push(canvas.toDataURL('image/jpeg', 0.55)); if(history.length>18) history.shift(); future = []; }catch{}
+}
+function setZoom(z){
+  viewZoom = Math.min(3, Math.max(0.25, z));
+  const el=document.getElementById('zoomLabel'); if(el) el.textContent=Math.round(viewZoom*100)+'%';
+  if(psd){ canvas.style.width = Math.round(psd.width*viewZoom)+'px'; canvas.style.height = Math.round(psd.height*viewZoom)+'px'; }
 }
 function zoomBy(d){ setZoom(viewZoom+d); }
 function undoEdit(){
@@ -936,28 +1031,20 @@ function redoEdit(){
 }
 function addTextLayer(){
   if(!psd){ alert('Open a template first'); return; }
-  const layer={ name:'{{HEADLINE}}', text:{ text:'{{HEADLINE}}', style:{ fontSize:36, fillColor:[1,1,1] } }, left:48, top:48, right:Math.min(psd.width-24, 520), bottom:110, hidden:false, opacity:255 };
+  const layer={ name:'{{HEADLINE}}', text:{ text:'{{HEADLINE}}', style:{ fontSize:36, fillColor:[1,1,1], font:{name:'Inter'} } }, left:48, top:48, right:Math.min(psd.width-24, 520), bottom:110, hidden:false, opacity:255 };
   psd.children = psd.children || [];
   psd.children.push(layer);
   flatLayers = flatten(psd.children);
   persistSide();
   buildLayerList();
+  rebuildLiveTypePanel();
   selectLayer(flatLayers.length-1);
 }
-function setLayerOpacity(v){
-  if(!selected) return;
-  selected.layer.opacity = Number(v);
-  render();
-}
+function setLayerOpacity(v){ if(!selected) return; selected.layer.opacity = Number(v); render(); }
 function applyLook(kind){
   if(!psd) return;
   snapshot();
-  const map = {
-    cinematic: 'contrast(1.18) saturate(0.85) brightness(0.96)',
-    vivid: 'contrast(1.12) saturate(1.35) brightness(1.04)',
-    mono: 'grayscale(1) contrast(1.08)',
-    reset: 'none',
-  };
+  const map = { cinematic:'contrast(1.18) saturate(0.85) brightness(0.96)', vivid:'contrast(1.12) saturate(1.35) brightness(1.04)', mono:'grayscale(1) contrast(1.08)', reset:'none' };
   canvas.style.filter = map[kind] || 'none';
 }
 function openAi(){ document.getElementById('aiModal').classList.add('open'); }
@@ -966,18 +1053,36 @@ document.getElementById('aiStudioBtn').addEventListener('click', openAi);
 document.getElementById('closeAiBtn').addEventListener('click', closeAi);
 document.getElementById('aiModal').addEventListener('click', e=>{ if(e.target.id==='aiModal') closeAi(); });
 
+function applyLiveRewrite(layerName, newText){
+  const hit = flatLayers.find(({layer})=> isLiveType(layer) && (layer.name===layerName || (layer.text.text||'').includes(layerName)));
+  if(!hit) return false;
+  selected = hit;
+  const t=document.getElementById('txtContent');
+  if(t) t.value = newText;
+  const meta = readPsdFont(hit.layer);
+  const fs=document.getElementById('txtFont'); if(fs){ if(![...fs.options].some(o=>o.value===meta.font)){ const o=document.createElement('option'); o.value=meta.font; o.textContent=meta.font+' (from PSD)'; fs.prepend(o);} fs.value=meta.font; }
+  applyText();
+  return true;
+}
+
 async function runStudioAI(mode){
   if(!psd){ document.getElementById('aiOut').textContent='Open a template first.'; return; }
   const out=document.getElementById('aiOut');
-  out.textContent='Thinking over your canvas…';
+  out.textContent='Scanning live type + canvas…';
   render(true);
   const blob = await new Promise(res=>canvas.toBlob(res,'image/jpeg',0.82));
   render();
   const fd=new FormData();
   fd.append('preview', blob, 'preview.jpg');
   fd.append('mode', mode);
-  fd.append('prompt', document.getElementById('aiPrompt').value || '');
-  fd.append('layers', JSON.stringify(flatLayers.slice(0,40).map(({layer})=>({name:layer.name, text:!!layer.text, hidden:!!layer.hidden}))));
+  fd.append('prompt', document.getElementById('aiPrompt').value || 'Find every editable Type layer, keep its font, and propose replacement copy. Do not treat flattened pixels as editable.');
+  fd.append('layers', JSON.stringify(flatLayers.slice(0,60).map(({layer})=>({
+    name: layer.name,
+    live: isLiveType(layer),
+    text: isLiveType(layer) ? readPsdFont(layer).text : '',
+    font: isLiveType(layer) ? readPsdFont(layer).font : '',
+    hidden: !!layer.hidden
+  }))));
   try{
     const r=await fetch('/api/studio/ai',{method:'POST', body:fd});
     const j=await r.json();
@@ -985,33 +1090,33 @@ async function runStudioAI(mode){
     if(!j.ok){ out.textContent=(j.message||j.error||'AI unavailable'); return; }
     const lines=[];
     if(j.summary) lines.push(j.summary,'');
-    if(j.copy){ lines.push('Copy', JSON.stringify(j.copy,null,2)); }
+    if(Array.isArray(j.liveEdits)){
+      lines.push('Applied live type edits');
+      j.liveEdits.forEach(ed=>{
+        if(ed && ed.layer && ed.to){
+          const ok = applyLiveRewrite(ed.layer, String(ed.to));
+          lines.push((ok?'✓ ':'· ')+ed.layer+': '+(ed.to||''));
+        }
+      });
+    }
     if(j.fillValues){
-      lines.push('','Suggested fills');
       Object.entries(j.fillValues).forEach(([k,v])=>{
         if(!v) return;
-        lines.push(k+': '+v);
         const tok='{{'+k.toUpperCase()+'}}';
         flatLayers.forEach(({layer})=>{
-          if(layer.text && String(layer.text.text||'').includes(tok)){
-            document.getElementById('txtContent') && (selected && selected.layer===layer);
-            layer.text.text = String(v);
-          }
+          if(isLiveType(layer) && String(layer.text.text||'').includes(tok)) applyLiveRewrite(layer.name, String(v));
         });
       });
     }
-    if(j.placeholders?.length){ lines.push('','Placeholders found'); j.placeholders.forEach(p=>lines.push((p.token||'')+' — '+(p.note||p.layer||''))); }
-    if(j.suggestedEdits?.length){ lines.push('','Edits'); j.suggestedEdits.forEach(e=>lines.push('• '+(e.action||'')+': '+(e.detail||e.target||''))); }
-    if(j.tips?.length){ lines.push('','Tips'); j.tips.forEach(t=>lines.push('• '+t)); }
+    if(j.copy){ lines.push('Copy', JSON.stringify(j.copy,null,2)); }
+    if(j.placeholders?.length){ lines.push('','Placeholders'); j.placeholders.forEach(p=>lines.push((p.token||'')+' — '+(p.note||p.layer||''))); }
+    if(j.suggestedEdits?.length){ lines.push('','Suggestions'); j.suggestedEdits.forEach(e=>lines.push('• '+(e.action||'')+': '+(e.detail||e.target||''))); }
     if(j.filters){
       const f=j.filters;
-      const b=1+(Number(f.brightness)||0)/100;
-      const c=1+(Number(f.contrast)||0)/100;
-      const s=1+(Number(f.saturate)||0)/100;
-      canvas.style.filter=`brightness(${b}) contrast(${c}) saturate(${s})`;
+      canvas.style.filter=`brightness(${1+(Number(f.brightness)||0)/100}) contrast(${1+(Number(f.contrast)||0)/100}) saturate(${1+(Number(f.saturate)||0)/100})`;
     }
     out.textContent=lines.join('\n') || JSON.stringify(j,null,2);
-    buildLayerList(); render();
+    rebuildLiveTypePanel(); buildLayerList(); render();
   }catch(err){ out.textContent='Network: '+err.message; }
 }
 
@@ -1021,9 +1126,10 @@ document.addEventListener('keydown', e=>{
   if(e.key===']') zoomBy(0.1);
   if(e.key==='[') zoomBy(-0.1);
 });
-
 const _origApply = applyText;
-applyText = function(){ snapshot(); _origApply(); };
+applyText = function(){ snapshot(); _origApply(); rebuildLiveTypePanel(); };
+const _origBuild = buildLayerList;
+buildLayerList = function(){ _origBuild(); rebuildLiveTypePanel(); };
 
 console.log('Editor ready. ag-psd available:', !!(window.AgPsd || window.agPsd || window.ag_psd));
 </script>

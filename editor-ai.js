@@ -18,6 +18,7 @@ const FORBIDDEN = /passport|driver.?licen[cs]e|national.?id|government.?id|visa\
 const SYSTEM = [
   'You are DocsEditor Studio, a world-class graphic designer for marketing cards, event badges, membership cards, invitations, and fictional product mockups.',
   'You NEVER help create, improve, or disguise government IDs, passports, driver licenses, visas, or other official documents. If asked, refuse and suggest a clearly fictional demo instead.',
+  'LIVE_TYPE layers are real Photoshop Type layers with fonts — those are the only strings you may rewrite via liveEdits. Raster/flattened pixels are not editable type. Preserve the original font unless the user asks to change it.',
   'Return ONLY JSON matching the requested schema. Be specific and actionable.',
 ].join(' ');
 
@@ -45,11 +46,15 @@ async function studioAsk({ imageBuffer, prompt, layers, mode }) {
   const preview = await shrinkPreview(imageBuffer);
   const model = process.env.OPENAI_VISION_MODEL || process.env.OPENAI_TEXT_MODEL || 'gpt-5-mini';
   const layerHint = Array.isArray(layers)
-    ? layers.slice(0, 40).map((l, i) => `${i}:${l.name || 'layer'} ${l.text ? 'TEXT' : 'IMG'} ${l.hidden ? 'hidden' : ''}`).join('\n')
+    ? layers.slice(0, 60).map((l, i) => {
+        const kind = l.live ? 'LIVE_TYPE' : (l.text ? 'TEXT' : 'RASTER');
+        return `${i}:${l.name || 'layer'} ${kind} font=${l.font || '-'} text=${JSON.stringify(String(l.text || '').slice(0, 80))} ${l.hidden ? 'hidden' : ''}`;
+      }).join('\n')
     : '';
 
   const schemaHint = {
     summary: 'one sentence of what you see',
+    liveEdits: [{ layer: 'exact live type layer name', from: 'current', to: 'replacement copy', keepFont: true }],
     placeholders: [{ token: '{{NAME}}', layer: 'layer name or null', x: 0, y: 0, note: '' }],
     suggestedEdits: [{ action: 'recolor|resize|replace-photo|rewrite-text|contrast|font', target: 'layer', detail: '' }],
     fillValues: { NAME: '', ROLE: '', ORG: '', TAGLINE: '' },
