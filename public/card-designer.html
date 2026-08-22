@@ -50,21 +50,46 @@
     background: var(--teal); color: #06211b; font-weight: 700; font-size: 15px; cursor: pointer; letter-spacing: 0.5px;
   }
   .btn:disabled { opacity: 0.5; cursor: wait; }
+  .btn.small { width: auto; padding: 8px 14px; font-size: 12.5px; margin-top: 8px; }
+  .btn.ghost { background: none; border: 1px solid var(--line); color: var(--muted); }
+  .btn.ghost:hover { color: var(--text); border-color: var(--teal); }
+  .btn.danger { background: none; border: 1px solid rgba(255,107,107,0.4); color: var(--red); }
   #error { display: none; margin-top: 14px; padding: 11px 13px; border-radius: 9px; background: rgba(255,107,107,0.12); border: 1px solid rgba(255,107,107,0.4); color: var(--red); font-size: 13px; }
-  .template-wrap { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
-  .template-wrap img { width: 100%; display: block; }
+  .template-wrap { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); touch-action: none; }
+  .template-wrap img { width: 100%; display: block; user-select: none; -webkit-user-drag: none; }
   .coord-box { position: absolute; border: 1.5px dashed var(--amber); background: rgba(245,166,35,0.07); }
-  .coord-box span { position: absolute; top: -17px; left: 0; font-size: 10px; color: var(--amber); letter-spacing: 1px; white-space: nowrap; }
+  .coord-box.editable { cursor: move; border-style: solid; }
+  .coord-box.selected { border-color: var(--teal); background: rgba(57,208,180,0.15); }
+  .coord-box span {
+    position: absolute; top: -18px; left: 0; font-size: 10px; color: var(--amber);
+    letter-spacing: 1px; white-space: nowrap; pointer-events: none;
+  }
+  .coord-box.selected span { color: var(--teal); }
+  .toolrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
   .toggle {
-    margin-top: 12px; background: none; border: 1px solid var(--line); color: var(--muted);
+    background: none; border: 1px solid var(--line); color: var(--muted);
     padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
   }
   .toggle:hover { color: var(--text); }
+  .toggle.on { border-color: var(--teal); color: var(--teal); }
+  #coordEditor { display: none; margin-top: 14px; padding: 14px; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; }
+  #coordEditor h3 { margin: 0 0 10px; font-size: 13px; letter-spacing: 1px; color: var(--teal); text-transform: uppercase; }
+  #coordEditor .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  #coordEditor label { margin: 4px 0 2px; font-size: 10px; }
+  #coordEditor input {
+    width: 100%; background: var(--panel); border: 1px solid var(--line); color: var(--text);
+    border-radius: 7px; padding: 7px 9px; font-size: 13px; outline: none;
+  }
+  #coordEditor input:focus { border-color: var(--teal); }
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--teal); color: #06211b; font-weight: 700; font-size: 13px;
+    padding: 10px 20px; border-radius: 10px; display: none; z-index: 50;
+  }
   #resultPanel { margin-top: 26px; }
   #resultPanel img { width: 100%; border-radius: 10px; border: 1px solid var(--line); }
   #resultPanel .btn { background: var(--amber); color: #1b1b2f; }
   .note { margin-top: 14px; font-size: 12px; color: var(--muted); line-height: 1.6; }
-  .note b { color: var(--amber); }
   #loginPanel { max-width: 420px; margin: 8vh auto; }
   #app[hidden], #loginPanel[hidden] { display: none; }
 </style>
@@ -93,7 +118,7 @@
     <!-- input form -->
     <form class="panel" id="cardForm">
       <h2>Card details</h2>
-      <p class="hint">Fields are merged onto the base template at the coordinates defined in <code>card-config.json</code>.</p>
+      <p class="hint">Fields are merged onto the template at the coordinates you configure below.</p>
 
       <label for="fName">Name</label>
       <input type="text" id="fName" name="name" placeholder="e.g. Amani K. Otieno" maxlength="40" required>
@@ -110,7 +135,7 @@
       </div>
 
       <label for="fRole">Role</label>
-      <input type="text" id="fRole" name="role" placeholder="e.g. Community Member" maxlength="32">
+      <input type="text" id="fRole" name="role" placeholder="e.g. Field Technician" maxlength="32">
 
       <label for="fMemberId">Member ID <span style="text-transform:none">(optional — auto-generated)</span></label>
       <input type="text" id="fMemberId" name="memberId" placeholder="e.g. DE-2026-0192" maxlength="24">
@@ -126,27 +151,46 @@
       <p id="error"></p>
     </form>
 
-    <!-- template + result -->
+    <!-- template + layout editor + result -->
     <div>
       <div class="panel">
-        <h2>Base template</h2>
-        <p class="hint">The single template with the coordinate map overlaid. Toggle the overlay to see where each field and the photo land.</p>
+        <h2>Template &amp; layout</h2>
+        <p class="hint">
+          Upload your organization's template once, then switch on
+          <b>Edit coordinates</b>, drag each box onto its slot and save.
+          Generated cards use this template with data placed exactly where
+          the boxes are.
+        </p>
         <div class="template-wrap" id="templateWrap">
-          <img id="templateImg" alt="Base template">
+          <img id="templateImg" alt="Template">
           <div id="overlay"></div>
         </div>
-        <button class="toggle" id="toggleBtn" type="button">Show coordinate map</button>
+        <div class="toolrow">
+          <button class="toggle" id="editBtn" type="button">Edit coordinates</button>
+          <button class="toggle" id="uploadTemplateBtn" type="button">Upload your template</button>
+          <button class="toggle" id="saveLayoutBtn" type="button" hidden>Save layout</button>
+          <button class="toggle" id="resetLayoutBtn" type="button" hidden>Reset coordinates</button>
+          <button class="toggle" id="removeTemplateBtn" type="button" hidden>Back to starter</button>
+          <input type="file" id="templateFile" accept="image/png,image/jpeg,image/webp" style="display:none">
+        </div>
+        <div id="coordEditor">
+          <h3 id="coordEditorTitle">Selected box</h3>
+          <div class="grid" id="coordGrid"></div>
+          <p class="note" id="coordEditorHint"></p>
+        </div>
       </div>
 
       <div class="panel" id="resultPanel" hidden>
         <h2>Generated card</h2>
-        <p class="hint">Every generated card is permanently stamped <b>SAMPLE — NOT AN OFFICIAL DOCUMENT</b> (bottom banner + tiled diagonal watermark).</p>
+        <p class="hint">Download the finished PNG — it is exactly the template with the photo and details in place.</p>
         <img id="resultImg" alt="Generated card">
         <button class="btn" id="downloadBtn" type="button">Download PNG</button>
-        <p class="note">Stored server-side for a limited time; the raw uploaded photo is never saved to disk — only the final composed PNG.</p>
+        <p class="note">Generated cards are stored server-side for a limited time; the raw uploaded photo is never saved to disk — only the final composed PNG.</p>
       </div>
     </div>
   </main>
+
+  <div id="toast"></div>
 
 <script>
 (function () {
@@ -154,7 +198,10 @@
   var TOKEN_KEY = 'docseditor_admin_token';
   var token = localStorage.getItem(TOKEN_KEY) || '';
   var layout = null;
+  var editMode = false;
+  var selectedKey = null;
   var lastResult = null;
+  var drag = null; // active drag state
 
   var $ = function (id) { return document.getElementById(id); };
   var app = $('app'), loginPanel = $('loginPanel'), err = $('error');
@@ -164,6 +211,13 @@
   }
   function showError(msg) { err.textContent = msg; err.style.display = 'block'; }
   function clearError() { err.style.display = 'none'; }
+  var toastTimer = null;
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg; t.style.display = 'block';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.style.display = 'none'; }, 2600);
+  }
 
   /* ── auth ─────────────────────────────────────────────────────────────── */
   function showLogin() {
@@ -198,47 +252,203 @@
       return r;
     });
   }
+  function apiJson(path, opts) {
+    return api(path, opts).then(function (r) { return r.json(); });
+  }
 
-  /* ── template + coordinate overlay ────────────────────────────────────── */
+  /* ── workspace load ───────────────────────────────────────────────────── */
   function loadWorkspace() {
-    api('/api/cards/layout').then(function (r) { return r.json(); }).then(function (cfg) {
+    apiJson('/api/cards/layout').then(function (cfg) {
       layout = cfg;
+      setEditorToolVisibility();
       drawOverlay();
     }).catch(function () {});
+    reloadTemplateImage();
+  }
+  function reloadTemplateImage() {
     api('/api/cards/template-preview').then(function (r) { return r.blob(); }).then(function (blob) {
       $('templateImg').src = URL.createObjectURL(blob);
     }).catch(function () {});
   }
 
+  /* ── overlay rendering + coordinate editor ────────────────────────────── */
+  function pct(v, axis) {
+    var size = axis === 'x' ? layout.canvas.width : layout.canvas.height;
+    return (v / size * 100) + '%';
+  }
   function drawOverlay() {
     if (!layout) return;
     var overlay = $('overlay');
     overlay.innerHTML = '';
-    function box(label, x, y, w, h) {
+    function makeBox(key, label, x, y, w, h) {
       var d = document.createElement('div');
-      d.className = 'coord-box';
-      d.style.left = (x / layout.canvas.width * 100) + '%';
-      d.style.top = (y / layout.canvas.height * 100) + '%';
-      d.style.width = (w / layout.canvas.width * 100) + '%';
-      d.style.height = (h / layout.canvas.height * 100) + '%';
+      d.className = 'coord-box' + (editMode ? ' editable' : '') + (selectedKey === key ? ' selected' : '');
+      d.dataset.key = key;
+      d.style.left = pct(x, 'x');
+      d.style.top = pct(y, 'x' === 'y' ? 'y' : 'y');
+      d.style.width = pct(w, 'x');
+      d.style.height = pct(h, 'y');
       var s = document.createElement('span');
       s.textContent = label;
       d.appendChild(s);
       overlay.appendChild(d);
+      return d;
     }
-    box('PHOTO', layout.photo.x, layout.photo.y, layout.photo.width, layout.photo.height);
+    var p = layout.photo;
+    makeBox('photo', 'PHOTO', p.x, p.y, p.width, p.height);
     Object.keys(layout.fields).forEach(function (key) {
       var f = layout.fields[key];
-      box(key.toUpperCase(), f.x, f.y - f.fontSize, f.maxWidth, Math.ceil(f.fontSize * 1.15));
+      makeBox(key, key.toUpperCase(), f.x, f.y - f.fontSize, f.maxWidth, f.fontSize * 1.5);
+    });
+    overlay.style.display = editMode ? 'block' : 'none';
+  }
+
+  function setEditorToolVisibility() {
+    var hasCustom = !!(layout && (layout.custom || layout.template === 'custom'));
+    $('editBtn').textContent = editMode ? 'Done editing' : 'Edit coordinates';
+    $('editBtn').classList.toggle('on', editMode);
+    $('saveLayoutBtn').hidden = !editMode;
+    $('resetLayoutBtn').hidden = !(editMode && hasCustom);
+    $('removeTemplateBtn').hidden = !(editMode && hasCustom);
+    if (!editMode) { $('coordEditor').style.display = 'none'; selectedKey = null; }
+  }
+
+  /* ── box dragging ─────────────────────────────────────────────────────── */
+  function boxRect(key) {
+    if (key === 'photo') {
+      var p = layout.photo;
+      return { x: p.x, y: p.y, w: p.width, h: p.height };
+    }
+    var f = layout.fields[key];
+    return { x: f.x, y: f.y - f.fontSize, w: f.maxWidth, h: f.fontSize * 1.5 };
+  }
+  function setBoxPos(key, x, y) {
+    var W = layout.canvas.width, H = layout.canvas.height;
+    if (key === 'photo') {
+      var p = layout.photo;
+      p.x = Math.round(Math.min(Math.max(x, 0), W - p.width));
+      p.y = Math.round(Math.min(Math.max(y, 0), H - p.height));
+    } else {
+      var f = layout.fields[key];
+      var boxW = f.maxWidth, boxH = f.fontSize * 1.5;
+      var nx = Math.round(Math.min(Math.max(x, 0), W - boxW));
+      var ny = Math.round(Math.min(Math.max(y, 0), H - boxH));
+      f.x = nx;
+      f.y = ny + f.fontSize; // baseline
+    }
+  }
+  function attachDrag(boxEl) {
+    boxEl.addEventListener('pointerdown', function (e) {
+      if (!editMode) return;
+      e.preventDefault();
+      selectedKey = boxEl.dataset.key;
+      showCoordEditor();
+      drawOverlay(); // re-render to highlight selection
+      var wrapRect = $('templateWrap').getBoundingClientRect();
+      var start = { x: e.clientX, y: e.clientY, rect: boxRect(selectedKey) };
+      drag = { key: selectedKey, start: start, wrap: wrapRect };
+      boxEl.setPointerCapture(e.pointerId);
+    });
+    boxEl.addEventListener('pointermove', function (e) {
+      if (!drag || drag.key !== boxEl.dataset.key) return;
+      var dxPx = (e.clientX - drag.start.x) / drag.wrap.width * layout.canvas.width;
+      var dyPx = (e.clientY - drag.start.y) / drag.wrap.height * layout.canvas.height;
+      setBoxPos(drag.key, drag.start.rect.x + dxPx, drag.start.rect.y + dyPx);
+      syncCoordInputs();
+      drawOverlay();
+    });
+    boxEl.addEventListener('pointerup', function () {
+      drag = null;
     });
   }
-  var overlayVisible = false;
-  $('toggleBtn').addEventListener('click', function () {
-    overlayVisible = !overlayVisible;
-    $('overlay').style.display = overlayVisible ? 'block' : 'none';
-    $('toggleBtn').textContent = overlayVisible ? 'Hide coordinate map' : 'Show coordinate map';
+  $('overlay').addEventListener('click', function (e) {
+    if (editMode && e.target === $('overlay')) { selectedKey = null; drawOverlay(); showCoordEditor(); }
   });
-  $('overlay').style.display = 'none';
+
+  /* ── numeric editor panel ─────────────────────────────────────────────── */
+  function showCoordEditor() {
+    var panel = $('coordEditor');
+    if (!editMode || !selectedKey) { panel.style.display = 'none'; return; }
+    panel.style.display = 'block';
+    $('coordEditorTitle').textContent = selectedKey === 'photo' ? 'PHOTO BOX' : selectedKey.toUpperCase() + ' FIELD';
+    var grid = $('coordGrid');
+    grid.innerHTML = '';
+    function addInput(labelText, value, onChange) {
+      var lab = document.createElement('label');
+      lab.textContent = labelText;
+      var inp = document.createElement('input');
+      inp.type = 'number';
+      inp.value = Math.round(value * 10) / 10;
+      inp.addEventListener('change', function () { onChange(parseFloat(inp.value) || 0); });
+      grid.appendChild(lab); grid.appendChild(inp);
+      return inp;
+    }
+    if (selectedKey === 'photo') {
+      var p = layout.photo;
+      addInput('X (left)', p.x, function (v) { p.x = v; setBoxPos('photo', p.x, p.y); syncCoordInputs(); drawOverlay(); });
+      addInput('Y (top)', p.y, function (v) { p.y = v; setBoxPos('photo', p.x, p.y); syncCoordInputs(); drawOverlay(); });
+      addInput('Width', p.width, function (v) { p.width = Math.max(20, v); drawOverlay(); syncCoordInputs(); });
+      addInput('Height', p.height, function (v) { p.height = Math.max(20, v); drawOverlay(); syncCoordInputs(); });
+      addInput('Corner radius', p.radius, function (v) { p.radius = Math.max(0, v); });
+      $('coordEditorHint').textContent = 'The photo is cover-cropped into this box. Drag the box, or type exact values.';
+    } else {
+      var f = layout.fields[selectedKey];
+      addInput('X (left)', f.x, function (v) { f.x = v; drawOverlay(); syncCoordInputs(); });
+      addInput('Y (text baseline)', f.y, function (v) { f.y = Math.max(f.fontSize, v); drawOverlay(); syncCoordInputs(); });
+      addInput('Font size', f.fontSize, function (v) { f.fontSize = Math.max(8, v); f.y = Math.max(f.y, f.fontSize); drawOverlay(); syncCoordInputs(); });
+      addInput('Max width', f.maxWidth, function (v) { f.maxWidth = Math.max(20, v); drawOverlay(); syncCoordInputs(); });
+      $('coordEditorHint').textContent = 'Y is the text BASELINE (bottom of the letters). Text auto-shrinks to fit max width.';
+    }
+  }
+  function syncCoordInputs() {
+    if ($('coordEditor').style.display === 'block' && selectedKey) showCoordEditor();
+  }
+
+  /* ── layout actions ───────────────────────────────────────────────────── */
+  $('editBtn').addEventListener('click', function () {
+    editMode = !editMode;
+    if (!editMode) selectedKey = null;
+    setEditorToolVisibility();
+    drawOverlay();
+  });
+  $('saveLayoutBtn').addEventListener('click', function () {
+    apiJson('/api/cards/layout', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photo: layout.photo, fields: layout.fields }),
+    }).then(function (cfg) {
+      layout = cfg; toast('Layout saved ✓'); setEditorToolVisibility(); drawOverlay();
+    }).catch(function (e) {
+      e.json && e.json().then(function (b) { toast(b.message || 'Save failed'); });
+    });
+  });
+  $('resetLayoutBtn').addEventListener('click', function () {
+    apiJson('/api/cards/layout', { method: 'DELETE' }).then(function (cfg) {
+      layout = cfg; selectedKey = null; toast('Coordinates reset'); setEditorToolVisibility(); drawOverlay();
+    });
+  });
+  $('removeTemplateBtn').addEventListener('click', function () {
+    apiJson('/api/cards/template', { method: 'DELETE' }).then(function (cfg) {
+      layout = cfg; selectedKey = null; reloadTemplateImage(); toast('Back to starter template'); setEditorToolVisibility(); drawOverlay();
+    });
+  });
+  $('uploadTemplateBtn').addEventListener('click', function () { $('templateFile').click(); });
+  $('templateFile').addEventListener('change', function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    var fd = new FormData();
+    fd.append('template', f);
+    $('uploadTemplateBtn').textContent = 'Uploading…';
+    apiJson('/api/cards/template', { method: 'POST', body: fd })
+      .then(function (cfg) {
+        layout = cfg; selectedKey = null;
+        reloadTemplateImage();
+        toast('Template uploaded — now drag the boxes into place ✓');
+        editMode = true; setEditorToolVisibility(); drawOverlay();
+      })
+      .catch(function () { toast('Template upload failed'); })
+      .then(function () { $('uploadTemplateBtn').textContent = 'Upload your template'; });
+  });
 
   /* ── photo picker with local preview ──────────────────────────────────── */
   var fileBox = $('fileBox'), photoInput = $('fPhoto');
@@ -270,7 +480,8 @@
     if (!file) { showError('Please choose a profile photo.'); return; }
     var fd = new FormData();
     ['name', 'dob', 'expiry', 'role', 'memberId'].forEach(function (k) {
-      var v = $(k === 'dob' ? 'fDob' : k === 'expiry' ? 'fExpiry' : k === 'name' ? 'fName' : k === 'role' ? 'fRole' : 'fMemberId').value.trim();
+      var id = k === 'dob' ? 'fDob' : k === 'expiry' ? 'fExpiry' : k === 'name' ? 'fName' : k === 'role' ? 'fRole' : 'fMemberId';
+      var v = $(id).value.trim();
       if (v) fd.append(k, v);
     });
     fd.append('photo', file);
@@ -304,9 +515,7 @@
 
   /* boot: try an authenticated call to decide which panel to show */
   if (token) {
-    api('/api/cards/layout').then(function (r) {
-      if (r.ok) showApp(); else showLogin();
-    }).catch(showLogin);
+    apiJson('/api/cards/layout').then(function () { showApp(); }).catch(showLogin);
   } else {
     showLogin();
   }

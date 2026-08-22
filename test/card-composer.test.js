@@ -2,18 +2,19 @@
  * Tests for the DocsEditor card composer (/api/cards/*).
  *
  * Spawns the real server (server.js) like the existing demo-card test, logs in
- * through /admin/login, then exercises the generate → preview → download flow
- * plus every documented error path. Pixel-level assertions prove the photo is
- * merged into its slot, the amber SAMPLE banner is stamped, and the name text
- * is actually rendered.
+ * through /admin/login, then exercises the generate → preview → download flow,
+ * the custom template + custom layout flow, and every documented error path.
+ * Pixel-level assertions prove the photo is merged into its slot and the name
+ * text is actually rendered.
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
+const fs = require('fs');
 const sharp = require('sharp');
 
-const { assertConfigFits, config } = require('../card-composer');
+const { assertConfigFits, getEffectiveLayout, TEMPLATE_DIR } = require('../card-composer');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = 33872;
@@ -40,9 +41,18 @@ function waitForServer(child) {
   });
 }
 
-function makePhoto() {
-  // solid blue portrait so we can prove pixel-perfect placement later
-  return sharp({ create: { width: 320, height: 400, channels: 4, background: { r: 30, g: 90, b: 180, alpha: 1 } } })
+async function login() {
+  const res = await fetch(`${BASE}/admin/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ADMIN),
+  });
+  assert.equal(res.status, 200);
+  const { token } = await res.json();
+  return { 'Authorization': `Bearer ${token}` };
+}
+
+function makePhoto(color = { r: 30, g: 90, b: 180 }) {
+  // solid portrait so we can prove pixel-perfect placement later
+  return sharp({ create: { width: 320, height: 400, channels: 4, background: { ...color, alpha: 1 } } })
     .png().toBuffer();
 }
 
@@ -82,10 +92,11 @@ async function regionStddev(png, left, top, width, height) {
 
 /* ── unit: coordinate overflow guard ─────────────────────────────────────── */
 
-test('assertConfigFits accepts the real template and rejects overflowing coordinates', () => {
-  assert.equal(assertConfigFits(config.canvas.width, config.canvas.height), true);
+test('assertConfigFits accepts the real layout and rejects overflowing coordinates', () => {
+  const layout = getEffectiveLayout();
+  assert.equal(assertConfigFits(layout, layout.canvas.width, layout.canvas.height), true);
   try {
-    assertConfigFits(100, 100);
+    assertConfigFits(layout, 100, 100);
     assert.fail('expected COORDINATE_OVERFLOW');
   } catch (err) {
     assert.equal(err.code, 'COORDINATE_OVERFLOW');
@@ -93,9 +104,9 @@ test('assertConfigFits accepts the real template and rejects overflowing coordin
   }
 });
 
-/* ── integration: full server flow ───────────────────────────────────────── */
+/* ── integration: full server flow (starter template) ────────────────────── */
 
-test('card endpoints: generate → preview → download, with stamp + photo + text verified', async (t) => {
+test('card endpoints: generate → preview → download, with photo + text verified', async (t) => {
   const child = spawn(process.execPath, ['server.js'], {
     cwd: ROOT,
     env: { ...process.env, PORT: String(PORT), ADMIN_PASS: ADMIN.pass, OPENAI_API_KEY: '', DEMO_CARD_DISABLE_AI: '1' },
@@ -104,14 +115,7 @@ test('card endpoints: generate → preview → download, with stamp + photo + te
   t.after(() => child.kill('SIGTERM'));
   await waitForServer(child);
 
-  // login through the existing admin endpoint, reuse the returned bearer token
-  const loginRes = await fetch(`${BASE}/admin/login`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ADMIN),
-  });
-  assert.equal(loginRes.status, 200);
-  const { token } = await loginRes.json();
-  assert.ok(token, 'login returns a token');
-  const authHeaders = { 'Authorization': `Bearer ${token}` };
+  const authHeaders = await login();
 
   // unauthenticated requests must be rejected
   const anon = await fetch(`${BASE}/api/cards/generate`, { method: 'POST', body: validForm() });
@@ -131,9 +135,9 @@ test('card endpoints: generate → preview → download, with stamp + photo + te
   assert.equal(created.status, 200);
   const payload = await created.json();
   assert.equal(payload.ok, true);
-  assert.equal(payload.watermark, 'SAMPLE — NOT AN OFFICIAL DOCUMENT');
   assert.equal(payload.width, 1050);
   assert.equal(payload.height, 660);
+  assert.equal('watermark' in payload, false, 'no watermark on generated cards');
   assert.match(payload.cardId, /^[a-f0-9]{12}$/);
 
   // preview is a real 1050x660 PNG
@@ -146,24 +150,105 @@ test('card endpoints: generate → preview → download, with stamp + photo + te
   assert.equal(meta.height, 660);
 
   // photo merged into its slot: sampled region is clearly blue-dominant
-  const photoRegion = await regionAverage(png, config.photo.x + 30, config.photo.y + 40, 80, 80);
+  const photoCfg = layout.photo;
+  const photoRegion = await regionAverage(png, photoCfg.x + 30, photoCfg.y + 40, 80, 80);
   assert.ok(photoRegion.b > photoRegion.r + 40, `photo present in slot (${JSON.stringify(photoRegion)})`);
 
   // name text rendered: high pixel variance where the value sits
-  const nameField = config.fields.name;
+  const nameField = layout.fields.name;
   const textSd = await regionStddev(png, nameField.x, nameField.y - nameField.fontSize + 4, Math.min(360, nameField.maxWidth), nameField.fontSize - 6);
   assert.ok(textSd > 15, `name text rendered (stddev=${textSd.toFixed(1)})`);
-
-  // amber SAMPLE banner stamped across the bottom
-  const banner = config.watermark.banner;
-  const bannerRegion = await regionAverage(png, 200, config.canvas.height - banner.height + 10, 300, banner.height - 20);
-  assert.ok(bannerRegion.r > 200 && bannerRegion.g > 120 && bannerRegion.b < 100, `amber banner present (${JSON.stringify(bannerRegion)})`);
 
   // download is an attachment
   const download = await fetch(`${BASE}${payload.downloadUrl}`, { headers: authHeaders });
   assert.equal(download.status, 200);
   assert.match(download.headers.get('content-disposition') || '', /attachment/);
 });
+
+/* ── integration: custom template + custom layout ────────────────────────── */
+
+test('custom template: upload, save layout, generate against it, reset', async (t) => {
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: ROOT,
+    env: { ...process.env, PORT: String(PORT), ADMIN_PASS: ADMIN.pass, OPENAI_API_KEY: '', DEMO_CARD_DISABLE_AI: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => child.kill('SIGTERM'));
+  t.after(() => { try { fs.rmSync(TEMPLATE_DIR, { recursive: true, force: true }); } catch {} });
+  await waitForServer(child);
+
+  const authHeaders = await login();
+
+  // upload a flat gray 700x500 "organization template"
+  const templatePng = await sharp({ create: { width: 700, height: 500, channels: 4, background: { r: 200, g: 200, b: 200, alpha: 1 } } })
+    .png().toBuffer();
+  const tForm = new FormData();
+  tForm.set('template', new Blob([templatePng], { type: 'image/png' }), 'org-template.png');
+  const uploaded = await fetch(`${BASE}/api/cards/template`, { method: 'POST', headers: authHeaders, body: tForm });
+  assert.equal(uploaded.status, 200);
+  const upBody = await uploaded.json();
+  assert.equal(upBody.ok, true);
+  assert.equal(upBody.template, 'custom');
+  assert.equal(upBody.canvas.width, 700);
+  assert.equal(upBody.canvas.height, 500);
+  assert.ok(upBody.photo.x >= 0 && upBody.photo.x + upBody.photo.width <= 700, 'scaled photo box fits');
+
+  // save a precise custom layout
+  const customLayout = {
+    photo: { x: 560, y: 60, width: 100, height: 120, radius: 8 },
+    fields: {
+      name: { x: 40, y: 120, fontSize: 40, maxWidth: 460 },
+      dob: { x: 40, y: 220, fontSize: 30, maxWidth: 220 },
+      expiry: { x: 300, y: 220, fontSize: 30, maxWidth: 220 },
+      role: { x: 40, y: 320, fontSize: 28, maxWidth: 460 },
+      memberId: { x: 40, y: 420, fontSize: 26, maxWidth: 460 },
+    },
+  };
+  const saved = await fetch(`${BASE}/api/cards/layout`, {
+    method: 'PUT', headers: { ...authHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify(customLayout),
+  });
+  assert.equal(saved.status, 200);
+  const savedBody = await saved.json();
+  assert.equal(savedBody.custom, true);
+  assert.equal(savedBody.photo.x, 560);
+
+  // generate: output must be exactly 700x500, gray template + blue photo slot
+  const form = validForm();
+  form.set('photo', new Blob([await makePhoto()], { type: 'image/png' }), 'photo.png');
+  const created = await fetch(`${BASE}/api/cards/generate`, { method: 'POST', headers: authHeaders, body: form });
+  assert.equal(created.status, 200);
+  const payload = await created.json();
+  assert.equal(payload.width, 700);
+  assert.equal(payload.height, 500);
+  const png = Buffer.from(await (await fetch(`${BASE}${payload.previewUrl}`, { headers: authHeaders })).arrayBuffer());
+  const meta = await sharp(png).metadata();
+  assert.equal(meta.width, 700);
+  assert.equal(meta.height, 500);
+  const photoRegion = await regionAverage(png, 580, 100, 60, 60);
+  assert.ok(photoRegion.b > photoRegion.r + 40, 'photo in custom slot');
+  const bgRegion = await regionAverage(png, 5, 5, 20, 20);
+  assert.ok(bgRegion.r > 190 && bgRegion.g > 190, 'template background preserved (no extra overlay)');
+
+  // invalid layout (photo box outside canvas) → 422
+  const badLayout = JSON.parse(JSON.stringify(customLayout));
+  badLayout.photo.x = 650; // 650 + 100 > 700
+  const bad = await fetch(`${BASE}/api/cards/layout`, {
+    method: 'PUT', headers: { ...authHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify(badLayout),
+  });
+  assert.equal(bad.status, 422);
+  assert.equal((await bad.json()).code, 'INVALID_LAYOUT');
+
+  // reset everything back to the starter
+  const reset = await fetch(`${BASE}/api/cards/template`, { method: 'DELETE', headers: authHeaders });
+  assert.equal(reset.status, 200);
+  const resetBody = await reset.json();
+  assert.equal(resetBody.template, 'starter');
+  assert.equal(resetBody.canvas.width, 1050);
+});
+
+/* ── integration: validation errors map to documented codes ──────────────── */
 
 test('card endpoints: validation errors map to documented codes', async (t) => {
   const child = spawn(process.execPath, ['server.js'], {
@@ -174,11 +259,7 @@ test('card endpoints: validation errors map to documented codes', async (t) => {
   t.after(() => child.kill('SIGTERM'));
   await waitForServer(child);
 
-  const loginRes = await fetch(`${BASE}/admin/login`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ADMIN),
-  });
-  const { token } = await (await loginRes.json());
-  const authHeaders = { 'Authorization': `Bearer ${token}` };
+  const authHeaders = await login();
   const photo = new Blob([await makePhoto()], { type: 'image/png' });
 
   async function post(form) {

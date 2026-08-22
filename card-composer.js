@@ -4,15 +4,18 @@
  * Pipeline:
  *   1. Validate the submitted text fields (name / dob / expiry / role / memberId)
  *      and the uploaded photo (JPEG/PNG/WebP, sane dimensions).
- *   2. Load the single base template (templates/base-card.png) and assert that
- *      every coordinate in card-config.json fits inside the canvas
- *      (this is the "coordinate overflow" guard).
- *   3. Fit + round the photo into the configured photo slot.
- *   4. Render the text fields at their configured baselines via an SVG overlay.
- *   5. Stamp the mandatory SAMPLE watermark (bottom banner + tiled diagonal
- *      text) on top of everything. This layer is intentionally not
- *      config-removable: outputs must never be mistakable for official
- *      documents.
+ *   2. Load the template: the organization's uploaded template
+ *      (uploads/templates/custom-template.png) when present, otherwise the
+ *      bundled starter template (templates/base-card.png).
+ *   3. Load the layout: the admin-saved custom coordinate map
+ *      (uploads/templates/custom-layout.json) when present, otherwise
+ *      card-config.json. Coordinates are checked against the template canvas
+ *      (the "coordinate overflow" guard).
+ *   4. Fit + round the photo into the configured photo slot.
+ *   5. Render the text fields at their configured baselines via an SVG overlay.
+ *
+ * The output is exactly the organization's template with the user's data
+ * dropped into the configured boxes — no extra branding is added.
  *
  * All drawing happens locally with sharp; no external generation service is
  * called, so no API keys are involved at all.
@@ -21,9 +24,13 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 
-const config = require('./card-config.json');
+const defaultConfig = require('./card-config.json');
 
-const TEMPLATE_PATH = path.join(__dirname, config.template);
+const TEMPLATE_DIR = path.join(__dirname, 'uploads', 'templates');
+const DEFAULT_TEMPLATE = path.join(__dirname, defaultConfig.template);
+const CUSTOM_TEMPLATE = path.join(TEMPLATE_DIR, 'custom-template.png');
+const CUSTOM_LAYOUT_FILE = path.join(TEMPLATE_DIR, 'custom-layout.json');
+
 const FONT_FAMILY = "'DejaVu Sans', 'Liberation Sans', 'Noto Sans', Arial, sans-serif";
 /** Rough average glyph advance for sans-serif fonts — used only to pre-shrink text. */
 const AVG_GLYPH_WIDTH = 0.62;
@@ -40,16 +47,102 @@ class CardError extends Error {
   }
 }
 
-/* ── Template loading (cached after first read) ──────────────────────────── */
+/* ── Custom template / layout persistence ────────────────────────────────── */
 
-let templateCache = null;
+function templateExists(p) {
+  try { return fs.existsSync(p); } catch { return false; }
+}
+
+/** The template that will actually be composed onto. */
+function getTemplatePath() {
+  return templateExists(CUSTOM_TEMPLATE) ? CUSTOM_TEMPLATE : DEFAULT_TEMPLATE;
+}
+
+function readCustomLayout() {
+  try { return JSON.parse(fs.readFileSync(CUSTOM_LAYOUT_FILE, 'utf8')); } catch { return null; }
+}
+
+function saveCustomLayout(layout) {
+  fs.mkdirSync(TEMPLATE_DIR, { recursive: true });
+  fs.writeFileSync(CUSTOM_LAYOUT_FILE, JSON.stringify(layout, null, 2));
+}
+
+function resetCustomLayout() {
+  try { fs.unlinkSync(CUSTOM_LAYOUT_FILE); } catch {}
+}
+
+/** Removes the uploaded template AND its layout — full reset to the starter. */
+function resetCustomTemplate() {
+  resetCustomLayout();
+  try { fs.unlinkSync(CUSTOM_TEMPLATE); } catch {}
+}
+
+/**
+ * Effective layout: card-config.json defaults overlaid with the admin-saved
+ * custom coordinate map (custom values win per field; styling falls back to
+ * defaults for anything unspecified).
+ */
+function getEffectiveLayout() {
+  const custom = readCustomLayout();
+  if (!custom) return defaultConfig;
+  const layout = {
+    canvas: { ...defaultConfig.canvas, ...(custom.canvas || {}) },
+    photo: { ...defaultConfig.photo, ...(custom.photo || {}) },
+    fields: {},
+  };
+  for (const [key, def] of Object.entries(defaultConfig.fields)) {
+    layout.fields[key] = { ...def, ...((custom.fields && custom.fields[key]) || {}) };
+  }
+  return layout;
+}
+
+/**
+ * Scale the default coordinate map onto a newly uploaded template so the
+ * admin gets a sane starting point to drag around instead of a blank slate.
+ */
+function scaleDefaultLayout({ width, height }) {
+  const fx = width / defaultConfig.canvas.width;
+  const fy = height / defaultConfig.canvas.height;
+  const fs = Math.min(fx, fy);
+  const round = (v) => Math.round(v * 10) / 10;
+  return {
+    canvas: { width, height },
+    photo: {
+      x: round(defaultConfig.photo.x * fx),
+      y: round(defaultConfig.photo.y * fy),
+      width: round(defaultConfig.photo.width * fx),
+      height: round(defaultConfig.photo.height * fy),
+      radius: Math.min(50, Math.max(0, round(defaultConfig.photo.radius * fs))),
+    },
+    fields: Object.fromEntries(
+      Object.entries(defaultConfig.fields).map(([key, f]) => [
+        key,
+        {
+          x: round(f.x * fx),
+          y: round(f.y * fy),
+          fontSize: Math.max(10, round(f.fontSize * fs)),
+          maxWidth: round(f.maxWidth * fx),
+          weight: f.weight,
+          color: f.color,
+        },
+      ])
+    ),
+  };
+}
+
+/* ── Template loading (cached by path + mtime) ───────────────────────────── */
+
+let templateCache = { path: null, mtimeMs: 0, buffer: null, width: 0, height: 0 };
+
 async function getTemplate() {
-  if (!templateCache) {
-    if (!fs.existsSync(TEMPLATE_PATH)) {
-      throw new CardError('TEMPLATE_MISSING', 'Base template not found — run node scripts/make-base-template.js', 500);
-    }
-    const { data, info } = await sharp(TEMPLATE_PATH).png().toBuffer({ resolveWithObject: true });
-    templateCache = { buffer: data, width: info.width, height: info.height };
+  const templatePath = getTemplatePath();
+  let mtimeMs = 0;
+  try { mtimeMs = fs.statSync(templatePath).mtimeMs; } catch {
+    throw new CardError('TEMPLATE_MISSING', 'No template available — upload one or run node scripts/make-base-template.js', 500);
+  }
+  if (templateCache.path !== templatePath || templateCache.mtimeMs !== mtimeMs) {
+    const { data, info } = await sharp(templatePath).png().toBuffer({ resolveWithObject: true });
+    templateCache = { path: templatePath, mtimeMs, buffer: data, width: info.width, height: info.height };
   }
   return templateCache;
 }
@@ -57,12 +150,11 @@ async function getTemplate() {
 /* ── Coordinate overflow guard ────────────────────────────────────────────── */
 
 /**
- * Throws COORDINATE_OVERFLOW (422) when any photo/text coordinate from
- * card-config.json lands outside the template canvas. Called before every
- * compose so a misconfigured layout fails loudly instead of silently
- * clipping the card.
+ * Throws COORDINATE_OVERFLOW (422) when any photo/text coordinate from the
+ * layout lands outside the template canvas. Called before every compose so a
+ * misconfigured layout fails loudly instead of silently clipping the card.
  */
-function assertConfigFits(templateWidth, templateHeight) {
+function assertConfigFits(layout, templateWidth, templateHeight) {
   const errors = [];
   const check = (label, x, y, w, h) => {
     if (!Number.isFinite(x) || !Number.isFinite(y) || w <= 0 || h <= 0 || x < 0 || y < 0) {
@@ -71,13 +163,13 @@ function assertConfigFits(templateWidth, templateHeight) {
       errors.push(`${label}: overflows ${templateWidth}x${templateHeight}`);
     }
   };
-  check('photo', config.photo.x, config.photo.y, config.photo.width, config.photo.height);
-  for (const [name, f] of Object.entries(config.fields)) {
+  check('photo', layout.photo.x, layout.photo.y, layout.photo.width, layout.photo.height);
+  for (const [name, f] of Object.entries(layout.fields)) {
     // A field occupies maxWidth × fontSize, anchored at its baseline.
     check(`field.${name}`, f.x, f.y - f.fontSize, f.maxWidth, f.fontSize);
   }
   if (errors.length) {
-    throw new CardError('COORDINATE_OVERFLOW', `card-config.json coordinates do not fit the template: ${errors.join('; ')}`, 422);
+    throw new CardError('COORDINATE_OVERFLOW', `Layout coordinates do not fit the template: ${errors.join('; ')}`, 422);
   }
   return true;
 }
@@ -143,14 +235,14 @@ function parseAndValidate(raw) {
 
 /**
  * Auto-rotates (EXIF), cover-crops to the photo slot and applies the rounded
- * corner mask from card-config.json.photo.radius.
+ * corner mask from the layout's photo radius.
  */
-async function preparePhoto(buffer) {
+async function preparePhoto(buffer, photoCfg) {
   const meta = await sharp(buffer).metadata().catch(() => null);
   if (!meta || !meta.width || !meta.height || meta.width < 60 || meta.height < 60) {
     throw new CardError('INVALID_PHOTO', 'Photo must be a valid image of at least 60x60 pixels', 400);
   }
-  const { width: w, height: h, radius } = config.photo;
+  const { width: w, height: h, radius } = photoCfg;
   const fitted = await sharp(buffer)
     .rotate() // honour EXIF orientation
     .resize(w, h, { fit: 'cover', position: 'attention' })
@@ -163,7 +255,7 @@ async function preparePhoto(buffer) {
   return sharp(fitted).composite([{ input: maskSvg, blend: 'dest-in' }]).png().toBuffer();
 }
 
-/* ── SVG overlay builders ─────────────────────────────────────────────────── */
+/* ── SVG text overlay ─────────────────────────────────────────────────────── */
 
 function xml(value) {
   return String(value)
@@ -185,9 +277,9 @@ function fitFontSize(text, field) {
   return { size: clamped ? MIN_FONT_SIZE : size, clamped };
 }
 
-function buildTextSvg(fields) {
+function buildTextSvg(fields, layout) {
   const parts = [];
-  for (const [key, field] of Object.entries(config.fields)) {
+  for (const [key, field] of Object.entries(layout.fields)) {
     if (!(key in fields)) continue;
     const { size, clamped } = fitFontSize(fields[key], field);
     const hardClamp = clamped
@@ -198,42 +290,7 @@ function buildTextSvg(fields) {
       `font-weight="${field.weight}" fill="${field.color}"${hardClamp}>${xml(fields[key])}</text>`
     );
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${config.canvas.width}" height="${config.canvas.height}">${parts.join('')}</svg>`;
-}
-
-/**
- * Mandatory SAMPLE watermark, drawn last so it sits on top of the photo and
- * every text field:
- *  - an amber banner across the bottom edge, and
- *  - a tiled diagonal repeat across the whole canvas (tamper-evident without
- *    ruining the design).
- */
-function buildWatermarkSvg() {
-  const { canvas: C, watermark: wm } = config;
-  const parts = [];
-
-  const step = wm.tile.spacing;
-  for (let y = -260; y < C.height + 260; y += step) {
-    for (let x = -260; x < C.width + 260; x += step) {
-      parts.push(
-        `<text x="${x}" y="${y}" transform="rotate(${wm.tile.angle} ${x} ${y})" ` +
-        `font-family="${FONT_FAMILY}" font-size="${wm.tile.fontSize}" font-weight="700" ` +
-        `fill="${wm.tile.color}" opacity="${wm.tile.opacity}" text-anchor="middle">${xml(wm.text)}</text>`
-      );
-    }
-  }
-
-  const b = wm.banner;
-  const top = C.height - b.height;
-  const baseline = top + (b.height + b.fontSize) / 2 - 6;
-  parts.push(`<rect x="0" y="${top}" width="${C.width}" height="${b.height}" fill="${b.background}"/>`);
-  parts.push(
-    `<text x="${C.width / 2}" y="${baseline.toFixed(1)}" font-family="${FONT_FAMILY}" ` +
-    `font-size="${b.fontSize}" font-weight="${b.weight}" fill="${b.textColor}" ` +
-    `text-anchor="middle" letter-spacing="1.5">${xml(wm.text)}</text>`
-  );
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${C.width}" height="${C.height}">${parts.join('')}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${layout.canvas.width}" height="${layout.canvas.height}">${parts.join('')}</svg>`;
 }
 
 /* ── Public API ───────────────────────────────────────────────────────────── */
@@ -243,7 +300,7 @@ function buildWatermarkSvg() {
  * @param {Object}   opts
  * @param {Object}   opts.fields       raw form fields: name, dob, expiry, role, memberId
  * @param {Buffer}   opts.photoBuffer  uploaded profile image (JPEG/PNG/WebP)
- * @returns {Promise<{png: Buffer, width: number, height: number, watermark: string}>}
+ * @returns {Promise<{png: Buffer, width: number, height: number}>}
  */
 async function composeCard({ fields: rawFields, photoBuffer }) {
   if (!photoBuffer || !photoBuffer.length) {
@@ -251,23 +308,39 @@ async function composeCard({ fields: rawFields, photoBuffer }) {
   }
 
   const fields = parseAndValidate(rawFields);
+  const layout = getEffectiveLayout();
   const template = await getTemplate();
-  assertConfigFits(template.width, template.height);
+  assertConfigFits(layout, template.width, template.height);
 
-  const photo = await preparePhoto(photoBuffer);
-  const textSvg = Buffer.from(buildTextSvg(fields));
-  const watermarkSvg = Buffer.from(buildWatermarkSvg());
+  const photo = await preparePhoto(photoBuffer, layout.photo);
+  const textSvg = Buffer.from(buildTextSvg(fields, layout));
 
   const png = await sharp(template.buffer)
     .composite([
-      { input: photo, left: config.photo.x, top: config.photo.y },
+      { input: photo, left: layout.photo.x, top: layout.photo.y },
       { input: textSvg },
-      { input: watermarkSvg },
     ])
     .png()
     .toBuffer();
 
-  return { png, width: template.width, height: template.height, watermark: config.watermark.text };
+  return { png, width: template.width, height: template.height };
 }
 
-module.exports = { composeCard, parseAndValidate, assertConfigFits, CardError, config };
+module.exports = {
+  composeCard,
+  parseAndValidate,
+  assertConfigFits,
+  CardError,
+  config: defaultConfig,
+  // custom template/layout management
+  getEffectiveLayout,
+  getTemplatePath,
+  scaleDefaultLayout,
+  saveCustomLayout,
+  resetCustomLayout,
+  resetCustomTemplate,
+  TEMPLATE_DIR,
+  CUSTOM_TEMPLATE,
+  CUSTOM_LAYOUT_FILE,
+  DEFAULT_TEMPLATE,
+};

@@ -29,14 +29,14 @@ The demo-card workflow permanently stamps SAMPLE — NOT A REAL ID and is restri
 
 ## Card designer (DocsEditor)
 
-Admin-only card composer at `/card-designer` (sign in with the admin credentials first). `POST /api/cards/generate` accepts multipart fields (`name`, `dob` DD/MM/YYYY, `expiry` MM/YYYY, `role`, optional `memberId`) plus a `photo` file (JPEG/PNG/WebP, max 8 MB) and merges them onto the single base template.
+Admin-only card composer at `/card-designer` (sign in with the admin credentials first). `POST /api/cards/generate` accepts multipart fields (`name`, `dob` DD/MM/YYYY, `expiry` MM/YYYY, `role`, optional `memberId`) plus a `photo` file (JPEG/PNG/WebP, max 8 MB) and merges them onto the active template at the configured coordinates.
 
-- `card-config.json` — coordinate map: photo slot + per-field baselines (X/Y/maxWidth/fontSize/color). Any coordinate that falls outside the canvas is rejected with `COORDINATE_OVERFLOW` (422).
-- `scripts/make-base-template.js` — regenerates `templates/base-card.png`; field labels are derived from `card-config.json` so template and composer stay in sync. Run it after editing coordinates.
-- `card-composer.js` — pure `sharp` composition service (validation, photo cover-fit + rounded corners, SVG text overlay, watermark). No external APIs or keys involved.
-- `card-routes.js` — Express router: `/generate`, `/layout`, `/template-preview`, `/:id/preview`, `/:id/download`. Multer memory storage (raw photos are never written to disk), per-IP rate limiting, admin-gated.
-- Uploaded outputs live in `uploads/cards/` (git-ignored) and are pruned to the newest 200.
-
-Every generated card is permanently stamped **SAMPLE — NOT AN OFFICIAL DOCUMENT** (amber bottom banner + tiled diagonal watermark) — this layer is mandatory by design and is not config-removable.
+- **Upload your organization's template** — `POST /api/cards/template` (admin, PNG/JPEG/WebP up to 15 MB). The generated PNG is exactly this template; the starter template is only the fallback. The upload UI seeds a proportionally-scaled version of the default coordinate map.
+- **Coordinate editor** — on the designer page, switch on "Edit coordinates", drag the photo box and each text field onto their slots (or type exact pixel values), then "Save layout" (`PUT /api/cards/layout`). "Reset coordinates" / "Back to starter" restore defaults.
+- `card-config.json` — default coordinate map (photo slot + per-field baselines: X/Y/maxWidth/fontSize/color). Coordinates that fall outside the canvas are rejected with `COORDINATE_OVERFLOW` (422).
+- `scripts/make-base-template.js` — regenerates the bundled starter template (`templates/base-card.png`); labels are derived from `card-config.json`.
+- `card-composer.js` — pure `sharp` composition service (validation, photo cover-fit + rounded corners, SVG text overlay). No external APIs or keys involved.
+- `card-routes.js` — Express router: `/generate`, `/template`, `/layout`, `/template-preview`, `/:id/preview`, `/:id/download`. Multer memory storage (raw photos are never written to disk), per-IP rate limiting, admin-gated.
+- Custom template + layout persist in `uploads/templates/` (git-ignored, survives deploys). Generated cards live in `uploads/cards/` and are pruned to the newest 200.
 
 Note: text is rendered via librsvg/pango, so the host needs a DejaVu-class sans-serif font (`sudo apt install fonts-dejavu-core` on bare VPS images).

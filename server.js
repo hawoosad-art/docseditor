@@ -1215,7 +1215,8 @@ app.get('/editor', (req,res)=>{
 
 // ── DocsEditor card composer (admin-gated) ─────────────────────────────────
 // /card-designer (page) + /api/cards/* (multer upload + sharp composition).
-// Every generated card is permanently stamped SAMPLE — NOT AN OFFICIAL DOCUMENT.
+// Admins upload their organization's own template and save a custom
+// coordinate map; the composer drops the data into exactly those boxes.
 const { createCardRouter } = require('./card-routes');
 app.use('/api/cards', createCardRouter(requireAdmin));
 app.get('/card-designer', requireAdmin, (req, res) => {

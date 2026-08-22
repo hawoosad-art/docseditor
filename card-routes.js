@@ -1,19 +1,25 @@
 /**
  * Express router: /api/cards/*
  *
- *   POST /generate          compose a card from multipart fields + photo upload
- *   GET  /layout            coordinate map (card-config.json) for the designer overlay
- *   GET  /template-preview  the base template PNG
- *   GET  /:id/preview       inline PNG preview of a generated card
- *   GET  /:id/download      same PNG as an attachment download
+ *   POST   /generate          compose a card from multipart fields + photo upload
+ *   GET    /layout            effective coordinate map (defaults + custom overrides)
+ *   PUT    /layout            save a custom coordinate map (admin)
+ *   DELETE /layout            reset the custom coordinate map to defaults (admin)
+ *   POST   /template          upload the organization's own template image (admin)
+ *   DELETE /template          remove the custom template + layout (admin)
+ *   GET    /template-preview  the currently active template PNG
+ *   GET    /:id/preview       inline PNG preview of a generated card
+ *   GET    /:id/download      same PNG as an attachment download
  *
  * Design notes:
- *  - Uploads are held in memory only (multer memoryStorage) — the raw user
- *    photo is never written to disk; only the final composed PNG is stored.
+ *  - Uploads are held in memory only (multer memoryStorage) — raw photos are
+ *    never written to disk; only the final composed PNG is stored. The custom
+ *    template and custom layout live in uploads/templates/ (git-ignored,
+ *    survives deploys).
  *  - Every route is gated behind the existing requireAdmin middleware.
  *  - /generate is rate-limited per IP.
  *  - Errors map to JSON: 400 INVALID_* / MISSING_PHOTO, 413 upload too large,
- *    422 COORDINATE_OVERFLOW, 500 COMPOSE_FAILED.
+ *    422 COORDINATE_OVERFLOW / INVALID_LAYOUT, 500 COMPOSE_FAILED.
  */
 const express = require('express');
 const path = require('path');
@@ -22,20 +28,30 @@ const fsp = require('fs/promises');
 const crypto = require('crypto');
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
+const sharp = require('sharp');
 
-const { composeCard, CardError, config } = require('./card-composer');
+const {
+  composeCard, CardError, config: defaultConfig,
+  getEffectiveLayout, getTemplatePath, scaleDefaultLayout,
+  saveCustomLayout, resetCustomLayout, resetCustomTemplate,
+} = require('./card-composer');
 
 const OUT_DIR = path.join(__dirname, 'uploads', 'cards');
 try { fs.mkdirSync(OUT_DIR, { recursive: true }); } catch {}
 
-const TEMPLATE_PATH = path.join(__dirname, config.template);
 const MAX_CARDS_ON_DISK = 200; // prune the oldest outputs beyond this
-const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
-const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+const MAX_TEMPLATE_BYTES = 15 * 1024 * 1024;
+const ALLOWED_PHOTO_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 12 },
+  limits: { fileSize: MAX_PHOTO_BYTES, files: 1, fields: 12 },
+});
+
+const templateUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_TEMPLATE_BYTES, files: 1, fields: 4 },
 });
 
 const generateLimiter = rateLimit({
@@ -60,6 +76,48 @@ async function pruneOldCards() {
 }
 
 /**
+ * Validate a custom layout payload: photo box + every text field must be a
+ * sensible rectangle inside the current template canvas.
+ */
+function validateLayoutPayload(body, canvas) {
+  const err = (msg) => new CardError('INVALID_LAYOUT', msg, 422);
+  const num = (v) => Number(v);
+  const finite = (v) => Number.isFinite(v);
+
+  const src = body.photo || {};
+  const photo = {
+    x: num(src.x), y: num(src.y),
+    width: num(src.width), height: num(src.height),
+    radius: src.radius === undefined ? defaultConfig.photo.radius : num(src.radius),
+  };
+  if (!['x', 'y', 'width', 'height', 'radius'].every((k) => finite(photo[k]) && photo[k] >= 0)) {
+    throw err('photo: x, y, width, height and radius must be non-negative numbers');
+  }
+  if (photo.width < 20 || photo.height < 20) throw err('photo: box must be at least 20x20 px');
+  if (photo.radius > Math.min(photo.width, photo.height) / 2) throw err('photo: radius is larger than the box');
+  if (photo.x + photo.width > canvas.width || photo.y + photo.height > canvas.height) throw err('photo: box exceeds the template canvas');
+
+  const fields = {};
+  for (const [key, def] of Object.entries(defaultConfig.fields)) {
+    const f = body.fields?.[key] || {};
+    const cfg = {
+      x: num(f.x), y: num(f.y),
+      fontSize: num(f.fontSize), maxWidth: num(f.maxWidth),
+      weight: def.weight, color: def.color,
+    };
+    if (!['x', 'y', 'fontSize', 'maxWidth'].every((k) => finite(cfg[k]) && cfg[k] >= 0)) {
+      throw err(`fields.${key}: x, y, fontSize and maxWidth must be non-negative numbers`);
+    }
+    if (cfg.fontSize < 8 || cfg.fontSize > 400) throw err(`fields.${key}: fontSize must be between 8 and 400`);
+    if (cfg.maxWidth < 20) throw err(`fields.${key}: maxWidth must be at least 20 px`);
+    if (cfg.y < cfg.fontSize) throw err(`fields.${key}: y must be at least its fontSize (baseline position)`);
+    if (cfg.x + cfg.maxWidth > canvas.width) throw err(`fields.${key}: exceeds the template canvas width`);
+    fields[key] = cfg;
+  }
+  return { photo, fields };
+}
+
+/**
  * Build the router. `requireAdmin` is passed in from server.js so the card
  * endpoints share the exact same authentication as the rest of the admin API.
  */
@@ -72,7 +130,7 @@ function createCardRouter(requireAdmin) {
   router.post('/generate', generateLimiter, gate, upload.single('photo'), async (req, res, next) => {
     try {
       if (!req.file) throw new CardError('MISSING_PHOTO', 'A profile photo file is required', 400);
-      if (!ALLOWED_MIME.has(req.file.mimetype)) {
+      if (!ALLOWED_PHOTO_MIME.has(req.file.mimetype)) {
         throw new CardError('INVALID_FILE_TYPE', 'Photo must be a JPEG, PNG or WebP image', 400);
       }
       const result = await composeCard({ fields: req.body, photoBuffer: req.file.buffer });
@@ -86,27 +144,79 @@ function createCardRouter(requireAdmin) {
         downloadUrl: `/api/cards/${id}/download`,
         width: result.width,
         height: result.height,
-        watermark: result.watermark,
       });
     } catch (err) {
       next(err);
     }
   });
 
-  /* ── Static-ish helpers (registered before the :id routes) ─────────────── */
+  /* ── Layout: read effective / save custom / reset ──────────────────────── */
 
   router.get('/layout', gate, (req, res) => {
+    const layout = getEffectiveLayout();
+    const custom = fs.existsSync(require('./card-composer').CUSTOM_LAYOUT_FILE);
     res.json({
       ok: true,
-      canvas: config.canvas,
-      photo: config.photo,
-      fields: config.fields,
-      watermark: config.watermark.text,
+      custom,
+      template: getTemplatePath().endsWith('custom-template.png') ? 'custom' : 'starter',
+      canvas: layout.canvas,
+      photo: layout.photo,
+      fields: layout.fields,
     });
   });
 
+  router.put('/layout', gate, (req, res, next) => {
+    try {
+      const current = getEffectiveLayout();
+      const { photo, fields } = validateLayoutPayload(req.body || {}, current.canvas);
+      saveCustomLayout({ canvas: current.canvas, photo, fields });
+      res.json({ ok: true, custom: true, canvas: current.canvas, photo, fields });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.delete('/layout', gate, (req, res) => {
+    resetCustomLayout();
+    const layout = getEffectiveLayout();
+    res.json({ ok: true, custom: false, canvas: layout.canvas, photo: layout.photo, fields: layout.fields });
+  });
+
+  /* ── Template: upload / remove ──────────────────────────────────────────── */
+
+  router.post('/template', gate, templateUpload.single('template'), async (req, res, next) => {
+    try {
+      if (!req.file) throw new CardError('MISSING_TEMPLATE', 'A template image file is required', 400);
+      if (!ALLOWED_PHOTO_MIME.has(req.file.mimetype)) {
+        throw new CardError('INVALID_FILE_TYPE', 'Template must be a JPEG, PNG or WebP image', 400);
+      }
+      const meta = await sharp(req.file.buffer).metadata().catch(() => null);
+      if (!meta || !meta.width || meta.width < 200 || meta.height < 200) {
+        throw new CardError('INVALID_TEMPLATE', 'Template must be a valid image of at least 200x200 px', 400);
+      }
+      if (meta.width > 5000 || meta.height > 5000) {
+        throw new CardError('INVALID_TEMPLATE', 'Template is too large (max 5000x5000 px)', 400);
+      }
+      const { CUSTOM_TEMPLATE, TEMPLATE_DIR } = require('./card-composer');
+      fs.mkdirSync(TEMPLATE_DIR, { recursive: true });
+      await sharp(req.file.buffer).rotate().png().toFile(CUSTOM_TEMPLATE);
+      // seed a scaled version of the default layout as a starting point
+      const layout = scaleDefaultLayout({ width: meta.width, height: meta.height });
+      saveCustomLayout(layout);
+      res.json({ ok: true, custom: true, template: 'custom', canvas: layout.canvas, photo: layout.photo, fields: layout.fields });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.delete('/template', gate, (req, res) => {
+    resetCustomTemplate();
+    const layout = getEffectiveLayout();
+    res.json({ ok: true, custom: false, template: 'starter', canvas: layout.canvas, photo: layout.photo, fields: layout.fields });
+  });
+
   router.get('/template-preview', gate, (req, res) => {
-    res.sendFile(TEMPLATE_PATH);
+    res.sendFile(getTemplatePath());
   });
 
   /* ── Generated card preview / download ─────────────────────────────────── */
@@ -137,7 +247,7 @@ function createCardRouter(requireAdmin) {
     }
     if (err instanceof multer.MulterError) {
       const code = err.code === 'LIMIT_FILE_SIZE' ? 'UPLOAD_TOO_LARGE' : 'UPLOAD_ERROR';
-      return res.status(413).json({ ok: false, code, message: 'File is too large (max 8 MB)' });
+      return res.status(413).json({ ok: false, code, message: 'File is too large (photo max 8 MB, template max 15 MB)' });
     }
     if (err && err.code === 'ENOENT') {
       return res.status(404).json({ ok: false, code: 'NOT_FOUND', message: 'Card not found' });
