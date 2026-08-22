@@ -179,6 +179,12 @@ function assertConfigFits(layout, templateWidth, templateHeight) {
 const RE_DATE_DMY = /^(\d{2})\/(\d{2})\/(\d{4})$/;
 const RE_MONTH_YEAR = /^(0[1-9]|1[0-2])\/(\d{4})$/;
 
+/** Field rules used by both parseAndValidate and the AI correction layer. */
+const FIELD_RULES = {
+  name: [/^[\p{L}][\p{L}\p{M} .'-]{1,39}$/u, 40, 'INVALID_NAME'],
+  role: [/^[\p{L}\p{N} &'.,()/-]{2,32}$/u, 32, 'INVALID_ROLE'],
+};
+
 /** Parse DD/MM/YYYY, rejecting impossible dates like 31/02/2026. */
 function parseDateDMY(value) {
   const m = RE_DATE_DMY.exec(String(value).trim());
@@ -189,10 +195,17 @@ function parseDateDMY(value) {
   return date;
 }
 
-function clean(value, max, pattern, code) {
+function clean(key, value) {
+  const [pattern, max, code] = FIELD_RULES[key];
   const s = String(value ?? '').replace(/\s+/g, ' ').trim();
   if (!pattern.test(s)) throw new CardError(code, `Invalid value for ${code.replace('INVALID_', '').toLowerCase()}`, 400);
   return s.slice(0, max);
+}
+
+/** Non-throwing variant used by the AI correction layer; null when invalid. */
+function sanitizeFieldValue(key, value) {
+  if (!FIELD_RULES[key]) return null;
+  try { return clean(key, value); } catch { return null; }
 }
 
 /**
@@ -200,7 +213,7 @@ function clean(value, max, pattern, code) {
  * a CardError with a specific code for the router to translate into a 400.
  */
 function parseAndValidate(raw) {
-  const name = clean(raw.name, 40, /^[\p{L}][\p{L}\p{M} .'-]{1,39}$/u, 'INVALID_NAME');
+  const name = clean('name', raw.name);
 
   const dobRaw = String(raw.dob ?? '').trim();
   const dobDate = parseDateDMY(dobRaw);
@@ -217,7 +230,7 @@ function parseAndValidate(raw) {
   if (expTotal <= dobTotal) throw new CardError('INVALID_EXPIRY', 'Expiry must be after the date of birth', 400);
   if (expYear < 2000 || expYear > dobDate.getUTCFullYear() + 100) throw new CardError('INVALID_EXPIRY', 'Expiry year is out of range', 400);
 
-  const role = clean(raw.role || 'Member', 32, /^[\p{L}\p{N} &'.,()/-]{2,32}$/u, 'INVALID_ROLE');
+  const role = clean('role', raw.role || 'Member');
   const memberId = raw.memberId
     ? clean(raw.memberId, 24, /^[A-Za-z0-9-]{3,24}$/, 'INVALID_MEMBER_ID')
     : `DE-${Math.random().toString(36).slice(2, 10)}`;
@@ -300,14 +313,30 @@ function buildTextSvg(fields, layout) {
  * @param {Object}   opts
  * @param {Object}   opts.fields       raw form fields: name, dob, expiry, role, memberId
  * @param {Buffer}   opts.photoBuffer  uploaded profile image (JPEG/PNG/WebP)
- * @returns {Promise<{png: Buffer, width: number, height: number}>}
+ * @param {boolean}  [opts.aiCorrect]  let the AI proofread the fields first (default true)
+ * @returns {Promise<{png: Buffer, width: number, height: number, corrections: Array, aiAvailable: boolean}>}
  */
-async function composeCard({ fields: rawFields, photoBuffer }) {
+async function composeCard({ fields: rawFields, photoBuffer, aiCorrect = true }) {
   if (!photoBuffer || !photoBuffer.length) {
     throw new CardError('MISSING_PHOTO', 'A profile photo (JPEG, PNG or WebP) is required', 400);
   }
 
-  const fields = parseAndValidate(rawFields);
+  let fields = parseAndValidate(rawFields);
+
+  // Optional AI proofreading pass (fixes typos like "Julit" → "Juliet").
+  // Lazily required to avoid a module cycle with card-ai.js.
+  let corrections = [];
+  let aiAvailable = false;
+  let aiError = null;
+  if (aiCorrect) {
+    const { applyCorrections } = require('./card-ai');
+    const review = await applyCorrections(fields);
+    fields = review.fields;
+    corrections = review.corrections;
+    aiAvailable = review.aiAvailable;
+    aiError = review.aiError || null;
+  }
+
   const layout = getEffectiveLayout();
   const template = await getTemplate();
   assertConfigFits(layout, template.width, template.height);
@@ -323,7 +352,7 @@ async function composeCard({ fields: rawFields, photoBuffer }) {
     .png()
     .toBuffer();
 
-  return { png, width: template.width, height: template.height };
+  return { png, width: template.width, height: template.height, corrections, aiAvailable, aiError };
 }
 
 module.exports = {
@@ -332,9 +361,11 @@ module.exports = {
   assertConfigFits,
   CardError,
   config: defaultConfig,
+  sanitizeFieldValue,
   // custom template/layout management
   getEffectiveLayout,
   getTemplatePath,
+  getTemplate,
   scaleDefaultLayout,
   saveCustomLayout,
   resetCustomLayout,

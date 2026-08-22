@@ -32,9 +32,10 @@ const sharp = require('sharp');
 
 const {
   composeCard, CardError, config: defaultConfig,
-  getEffectiveLayout, getTemplatePath, scaleDefaultLayout,
+  getEffectiveLayout, getTemplatePath, getTemplate, scaleDefaultLayout,
   saveCustomLayout, resetCustomLayout, resetCustomTemplate,
 } = require('./card-composer');
+const { analyzeTemplatePng, normalizeAiLayout, mergeAiLayout, aiConfigured } = require('./card-ai');
 
 const OUT_DIR = path.join(__dirname, 'uploads', 'cards');
 try { fs.mkdirSync(OUT_DIR, { recursive: true }); } catch {}
@@ -58,6 +59,14 @@ const generateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 30,
   message: { ok: false, error: 'Too many card requests — try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const aiLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  message: { ok: false, error: 'Too many AI requests — try again later' },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -133,7 +142,11 @@ function createCardRouter(requireAdmin) {
       if (!ALLOWED_PHOTO_MIME.has(req.file.mimetype)) {
         throw new CardError('INVALID_FILE_TYPE', 'Photo must be a JPEG, PNG or WebP image', 400);
       }
-      const result = await composeCard({ fields: req.body, photoBuffer: req.file.buffer });
+      const result = await composeCard({
+        fields: req.body,
+        photoBuffer: req.file.buffer,
+        aiCorrect: req.body.aiCorrect !== 'false', // form checkbox can opt out per request
+      });
       const id = crypto.randomBytes(6).toString('hex');
       await fsp.writeFile(path.join(OUT_DIR, `${id}.png`), result.png);
       pruneOldCards();
@@ -144,6 +157,9 @@ function createCardRouter(requireAdmin) {
         downloadUrl: `/api/cards/${id}/download`,
         width: result.width,
         height: result.height,
+        corrections: result.corrections,
+        aiAvailable: result.aiAvailable,
+        aiError: result.aiError || null,
       });
     } catch (err) {
       next(err);
@@ -162,7 +178,30 @@ function createCardRouter(requireAdmin) {
       canvas: layout.canvas,
       photo: layout.photo,
       fields: layout.fields,
+      aiAvailable: aiConfigured(),
     });
+  });
+
+  /* ── AI: read the template and auto-position the fields ────────────────── */
+
+  router.post('/analyze-template', aiLimiter, gate, async (req, res, next) => {
+    try {
+      const template = await getTemplate(); // { buffer, width, height } of the ACTIVE template
+      const raw = await analyzeTemplatePng(template.buffer);
+      const fragment = normalizeAiLayout(raw, template.width, template.height);
+      const merged = mergeAiLayout(fragment, getEffectiveLayout());
+      saveCustomLayout(merged);
+      res.json({
+        ok: true,
+        custom: true,
+        canvas: merged.canvas,
+        photo: merged.photo,
+        fields: merged.fields,
+        aiFound: Object.keys(fragment.fields),
+      });
+    } catch (err) {
+      next(err);
+    }
   });
 
   router.put('/layout', gate, (req, res, next) => {

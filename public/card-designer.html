@@ -86,6 +86,17 @@
     background: var(--teal); color: #06211b; font-weight: 700; font-size: 13px;
     padding: 10px 20px; border-radius: 10px; display: none; z-index: 50;
   }
+  .inlinecheck {
+    display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted);
+    text-transform: none; letter-spacing: 0; margin-top: 14px; cursor: pointer;
+  }
+  .inlinecheck input { accent-color: var(--teal); }
+  #aiCorrections {
+    display: none; margin-top: 12px; padding: 10px 12px; border-radius: 9px;
+    background: rgba(57,208,180,0.10); border: 1px solid rgba(57,208,180,0.45);
+    font-size: 12.5px; line-height: 1.6;
+  }
+  .btn.ai { background: none; border: 1px solid var(--teal); color: var(--teal); }
   #resultPanel { margin-top: 26px; }
   #resultPanel img { width: 100%; border-radius: 10px; border: 1px solid var(--line); }
   #resultPanel .btn { background: var(--amber); color: #1b1b2f; }
@@ -148,6 +159,10 @@
       </div>
 
       <button class="btn" id="generateBtn" type="submit">Generate card</button>
+      <label class="inlinecheck" id="aiCorrectRow" hidden>
+        <input type="checkbox" id="aiCorrect" checked> Let AI fix typos before printing (e.g. "Julit" → "Juliet")
+      </label>
+      <div id="aiCorrections"></div>
       <p id="error"></p>
     </form>
 
@@ -166,6 +181,7 @@
           <div id="overlay"></div>
         </div>
         <div class="toolrow">
+          <button class="toggle ai" id="aiReadBtn" type="button" hidden>✨ AI: read template</button>
           <button class="toggle" id="editBtn" type="button">Edit coordinates</button>
           <button class="toggle" id="uploadTemplateBtn" type="button">Upload your template</button>
           <button class="toggle" id="saveLayoutBtn" type="button" hidden>Save layout</button>
@@ -260,6 +276,8 @@
   function loadWorkspace() {
     apiJson('/api/cards/layout').then(function (cfg) {
       layout = cfg;
+      $('aiReadBtn').hidden = !cfg.aiAvailable;
+      $('aiCorrectRow').hidden = !cfg.aiAvailable;
       setEditorToolVisibility();
       drawOverlay();
     }).catch(function () {});
@@ -404,6 +422,38 @@
     if ($('coordEditor').style.display === 'block' && selectedKey) showCoordEditor();
   }
 
+  /* ── AI: read template ─────────────────────────────────────────────────── */
+  $('aiReadBtn').addEventListener('click', function () {
+    $('aiReadBtn').textContent = '✨ Reading template…';
+    apiJson('/api/cards/analyze-template', { method: 'POST' })
+      .then(function (cfg) {
+        if (!cfg.ok) { toast('AI: ' + (cfg.message || 'unavailable')); return; }
+        layout = cfg;
+        editMode = true; selectedKey = null;
+        setEditorToolVisibility(); drawOverlay();
+        var found = (cfg.aiFound || []).join(', ').toUpperCase();
+        toast('AI placed the fields' + (found ? ' (' + found + ')' : '') + ' — fine-tune, then Save layout');
+      })
+      .catch(function (e) {
+        if (e && e.json) e.json().then(function (b) { toast('AI: ' + (b.message || 'failed')); });
+        else if (e && e.message !== 'Admin session required') toast('AI request failed');
+      })
+      .then(function () { $('aiReadBtn').textContent = '✨ AI: read template'; });
+  });
+
+  /* ── AI corrections banner ─────────────────────────────────────────────── */
+  function showCorrections(list) {
+    var box = $('aiCorrections');
+    if (!list || !list.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'block';
+    box.innerHTML = '<b>✏️ AI fixed before printing:</b><br>' + list.map(function (c) {
+      return c.field.toUpperCase() + ': “' + c.from + '” → “' + c.to + '”' + (c.reason ? ' (' + c.reason + ')' : '');
+    }).join('<br>');
+    // overwrite the form values with the corrected ones
+    var map = { name: 'fName', role: 'fRole', dob: 'fDob', expiry: 'fExpiry', memberId: 'fMemberId' };
+    list.forEach(function (c) { if (map[c.field]) $(map[c.field]).value = c.to; });
+  }
+
   /* ── layout actions ───────────────────────────────────────────────────── */
   $('editBtn').addEventListener('click', function () {
     editMode = !editMode;
@@ -485,6 +535,7 @@
       if (v) fd.append(k, v);
     });
     fd.append('photo', file);
+    fd.append('aiCorrect', $('aiCorrect').checked ? 'true' : 'false');
 
     var btn = $('generateBtn');
     btn.disabled = true; btn.textContent = 'Generating…';
@@ -493,6 +544,7 @@
       .then(function (x) {
         if (!x.ok || !x.body.ok) throw new Error(x.body.message || x.body.error || 'Generation failed');
         lastResult = x.body;
+        showCorrections(x.body.corrections || []);
         return api(x.body.previewUrl).then(function (r) { return r.blob(); }).then(function (blob) {
           $('resultImg').src = URL.createObjectURL(blob);
           $('resultPanel').hidden = false;

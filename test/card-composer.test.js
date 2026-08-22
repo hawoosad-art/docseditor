@@ -138,6 +138,8 @@ test('card endpoints: generate → preview → download, with photo + text verif
   assert.equal(payload.width, 1050);
   assert.equal(payload.height, 660);
   assert.equal('watermark' in payload, false, 'no watermark on generated cards');
+  assert.deepEqual(payload.corrections, [], 'no corrections without an AI key');
+  assert.equal(payload.aiAvailable, false);
   assert.match(payload.cardId, /^[a-f0-9]{12}$/);
 
   // preview is a real 1050x660 PNG
@@ -307,4 +309,28 @@ test('card endpoints: validation errors map to documented codes', async (t) => {
   // unknown card id → 404
   const missing = await fetch(`${BASE}/api/cards/deadbeef0000/preview`, { headers: authHeaders });
   assert.equal(missing.status, 404);
+});
+
+/* ── integration: AI endpoints degrade gracefully without a key ──────────── */
+
+test('AI endpoints: analyze-template → 503 AI_UNAVAILABLE, layout reports aiAvailable=false', async (t) => {
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: ROOT,
+    env: { ...process.env, PORT: String(PORT), ADMIN_PASS: ADMIN.pass, OPENAI_API_KEY: '', DEMO_CARD_DISABLE_AI: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => child.kill('SIGTERM'));
+  await waitForServer(child);
+
+  const authHeaders = await login();
+
+  const res = await fetch(`${BASE}/api/cards/analyze-template`, { method: 'POST', headers: authHeaders });
+  assert.equal(res.status, 503);
+  const body = await res.json();
+  assert.equal(body.code, 'AI_UNAVAILABLE');
+
+  const layoutRes = await fetch(`${BASE}/api/cards/layout`, { headers: authHeaders });
+  assert.equal(layoutRes.status, 200);
+  const layout = await layoutRes.json();
+  assert.equal(layout.aiAvailable, false);
 });
