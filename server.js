@@ -1207,6 +1207,35 @@ app.get('/download', (req,res)=>{
   res.send(html);
 });
 
+const studioLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 40,
+  message: { ok: false, error: 'Too many Studio AI requests — try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const studioUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
+const { studioAsk, aiConfigured: studioAiConfigured } = require('./editor-ai');
+app.get('/api/studio/status', (req, res) => res.json({ ok: true, ai: studioAiConfigured() }));
+app.post('/api/studio/ai', studioLimiter, studioUpload.single('preview'), async (req, res) => {
+  try {
+    if (!req.file?.buffer) return res.status(400).json({ ok: false, error: 'A canvas preview image is required' });
+    let layers = [];
+    try { layers = JSON.parse(req.body.layers || '[]'); } catch { layers = []; }
+    const result = await studioAsk({
+      imageBuffer: req.file.buffer,
+      prompt: req.body.prompt || '',
+      mode: req.body.mode || 'direct',
+      layers,
+    });
+    const status = result.refused ? 400 : (result.ok ? 200 : (result.code === 'AI_UNAVAILABLE' ? 503 : 422));
+    return res.status(status).json(result);
+  } catch (error) {
+    console.error('[studio-ai]', error);
+    return res.status(500).json({ ok: false, error: error.message || 'Studio AI failed' });
+  }
+});
+
 app.get('/editor', (req,res)=>{
   const p = path.join(__dirname,'public','editor.html');
   if(fs.existsSync(p)) return res.sendFile(p);

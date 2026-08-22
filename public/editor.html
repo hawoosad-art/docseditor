@@ -15,7 +15,10 @@
 :root{--bg:#080c14;--card:#111827;--border:#1f2937;--accent:#3b82f6;--text:#e5e7eb;--muted:#9ca3af}
 body{font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
 a{color:#60a5fa;text-decoration:none}
-.nav{position:sticky;top:0;z-index:40;display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(8,12,20,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+.nav{position:sticky;top:0;z-index:40;display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:linear-gradient(180deg,rgba(12,16,32,.96),rgba(8,12,20,.92));backdrop-filter:blur(14px);border-bottom:1px solid var(--border)}
+.toolbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 12px;background:#0b1020;border-bottom:1px solid var(--border)}
+.chip{border:1px solid #243049;background:#121a2e;color:#c7d2fe;border-radius:999px;padding:4px 10px;font-size:11px;cursor:pointer}
+.ai-glow{background:linear-gradient(135deg,#7c3aed,#2563eb);border:0;color:#fff;box-shadow:0 0 24px rgba(124,58,237,.35)}
 .btn{border:1px solid var(--border);background:#111827;color:var(--text);padding:8px 12px;border-radius:9px;font-weight:600;font-size:13px;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .btn:hover{transform:translateY(-1px);border-color:#243049}
 .btn-primary{background:linear-gradient(135deg,#2563eb,#1d4ed8);border-color:transparent;color:white;box-shadow:0 6px 16px rgba(37,99,235,.25)}
@@ -87,6 +90,19 @@ a{color:#60a5fa;text-decoration:none}
   </div>
 </div>
 
+<div id="aiModal" class="modal-backdrop" role="dialog" aria-modal="true">
+  <div class="modal" style="width:min(720px,100%)">
+    <div class="modal-head"><div><div class="modal-title">Studio AI Copilot</div><div class="modal-subtitle">Describe the look you want. The model reads your canvas and returns placeholders, copy, color, and filter recipes. Official IDs are refused.</div></div><button class="close-btn" id="closeAiBtn" aria-label="Close">×</button></div>
+    <textarea id="aiPrompt" class="input" rows="3" placeholder="e.g. Make this a premium night-club guest pass: gold type, cinematic contrast, fill {{NAME}} and {{ROLE}} with sample copy"></textarea>
+    <div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap">
+      <button class="btn btn-sm" onclick="runStudioAI('analyze')">Scan template</button>
+      <button class="btn btn-sm" onclick="runStudioAI('copy')">Write copy</button>
+      <button class="btn btn-sm" onclick="runStudioAI('look')">Suggest look</button>
+      <button class="btn btn-primary btn-sm" onclick="runStudioAI('direct')">✦ Run request</button>
+    </div>
+    <div id="aiOut" style="font-size:13px;line-height:1.5;color:var(--text);white-space:pre-wrap;min-height:80px;background:#0b1220;border:1px solid var(--border);border-radius:10px;padding:12px">Open a template, then scan or describe an edit.</div>
+  </div>
+</div>
 <nav class="nav">
   <a href="/" style="font-weight:800;display:flex;align-items:center;gap:9px">
     <img src="/ic_launcher_round.webp" alt="FaceGate" style="width:28px;height:28px;border-radius:8px;object-fit:cover;border:1px solid #1f2937;display:block"/>
@@ -98,6 +114,7 @@ a{color:#60a5fa;text-decoration:none}
       <button class="btn btn-sm" id="backTab" style="border:0;border-radius:0">Back</button>
     </div>
     <button class="btn btn-sm" id="uploadBtn">📂 Open template</button>
+    <button class="btn btn-sm ai-glow" id="aiStudioBtn">✦ AI Copilot</button>
     <button class="btn btn-sm" id="demoCardBtn">✨ Safe demo card</button>
     <button class="btn btn-primary btn-sm" onclick="exportPNG()">⬇ Export PNG</button>
     <button class="btn btn-sm" onclick="exportBothSides()">⬇ Front + back</button>
@@ -106,6 +123,20 @@ a{color:#60a5fa;text-decoration:none}
   </div>
 </nav>
 
+<div class="toolbar">
+  <button class="btn btn-sm" onclick="undoEdit()" title="Undo">↶ Undo</button>
+  <button class="btn btn-sm" onclick="redoEdit()" title="Redo">↷ Redo</button>
+  <button class="btn btn-sm" onclick="addTextLayer()">＋ Text</button>
+  <button class="btn btn-sm" onclick="zoomBy(0.15)">＋ Zoom</button>
+  <button class="btn btn-sm" onclick="zoomBy(-0.15)">－ Zoom</button>
+  <button class="btn btn-sm" onclick="setZoom(1)">Fit</button>
+  <span class="kbd" id="zoomLabel">100%</span>
+  <button class="chip" onclick="applyLook('cinematic')">Cinematic</button>
+  <button class="chip" onclick="applyLook('vivid')">Vivid</button>
+  <button class="chip" onclick="applyLook('mono')">Mono</button>
+  <button class="chip" onclick="applyLook('reset')">Reset look</button>
+  <span class="kbd">Ctrl+Z · Ctrl+E export · [ ] zoom</span>
+</div>
 <div class="layout">
   <!-- Left: Layers -->
   <div class="panel">
@@ -173,11 +204,14 @@ a{color:#60a5fa;text-decoration:none}
 
       <div id="imageProps" class="hidden">
         <div class="prop-group">
-          <label>Replace Image</label>
+          <label>Replace image</label>
           <input id="imgReplace" type="file" accept="image/*" class="input"/>
-          <div style="font-size:11px;color:var(--muted);margin-top:6px">Upload a PNG/JPG to replace this layer's pixels.</div>
         </div>
-        <button class="btn" style="width:100%" onclick="clearImageReplace()">Clear</button>
+        <div class="prop-group">
+          <label>Layer opacity</label>
+          <input id="layerOpacity" type="range" min="20" max="255" value="255" class="input" oninput="setLayerOpacity(this.value)"/>
+        </div>
+        <button class="btn" style="width:100%" onclick="clearImageReplace()">Restore original</button>
       </div>
 
       <div id="layerInfo" class="hidden" style="margin-top:14px;padding:10px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;font-size:11px;line-height:1.5;color:var(--muted)"></div>
@@ -455,7 +489,12 @@ function buildLayerList(){
     info.className='layer-info';
     const name = layer.name || '(unnamed)';
     info.innerHTML=`<div class="layer-name">${name}</div><div class="layer-meta">${isGroup?'Group': isText?'Text • '+(layer.text?.text?.slice(0,20)||'') : 'Image • '+(layer.right-layer.left||0)+'×'+(layer.bottom-layer.top||0)}</div>`;
-    div.appendChild(thumb); div.appendChild(info);
+    const eye=document.createElement('button');
+    eye.className='btn btn-sm'; eye.style.padding='2px 6px';
+    eye.textContent = layer.hidden ? '⊘' : '◉';
+    eye.title='Toggle visibility';
+    eye.onclick=(ev)=>{ ev.stopPropagation(); layer.hidden=!layer.hidden; if(layer.hidden){ /* skip draw in fallback */ } buildLayerList(); render(); };
+    div.appendChild(thumb); div.appendChild(info); div.appendChild(eye);
     div.onclick=()=>selectLayer(idx);
     el.appendChild(div);
   });
@@ -875,6 +914,117 @@ demoForm.addEventListener('submit',async function(e){
 });
 
 // Log that the page is ready and ag-psd is available
+console.log('Editor ready. ag-psd available:', !!(window.AgPsd || window.agPsd || window.ag_psd));
+</script>
+</body>
+</html>
+ath.round(psd.height*viewZoom)+'px';
+  }
+}
+function zoomBy(d){ setZoom(viewZoom+d); }
+function undoEdit(){
+  if(!history.length) return;
+  future.push(canvas.toDataURL('image/jpeg',0.55));
+  const url=history.pop();
+  const img=new Image(); img.onload=()=>{ ctx.drawImage(img,0,0,canvas.width,canvas.height); }; img.src=url;
+}
+function redoEdit(){
+  if(!future.length) return;
+  history.push(canvas.toDataURL('image/jpeg',0.55));
+  const url=future.pop();
+  const img=new Image(); img.onload=()=>{ ctx.drawImage(img,0,0,canvas.width,canvas.height); }; img.src=url;
+}
+function addTextLayer(){
+  if(!psd){ alert('Open a template first'); return; }
+  const layer={ name:'{{HEADLINE}}', text:{ text:'{{HEADLINE}}', style:{ fontSize:36, fillColor:[1,1,1] } }, left:48, top:48, right:Math.min(psd.width-24, 520), bottom:110, hidden:false, opacity:255 };
+  psd.children = psd.children || [];
+  psd.children.push(layer);
+  flatLayers = flatten(psd.children);
+  persistSide();
+  buildLayerList();
+  selectLayer(flatLayers.length-1);
+}
+function setLayerOpacity(v){
+  if(!selected) return;
+  selected.layer.opacity = Number(v);
+  render();
+}
+function applyLook(kind){
+  if(!psd) return;
+  snapshot();
+  const map = {
+    cinematic: 'contrast(1.18) saturate(0.85) brightness(0.96)',
+    vivid: 'contrast(1.12) saturate(1.35) brightness(1.04)',
+    mono: 'grayscale(1) contrast(1.08)',
+    reset: 'none',
+  };
+  canvas.style.filter = map[kind] || 'none';
+}
+function openAi(){ document.getElementById('aiModal').classList.add('open'); }
+function closeAi(){ document.getElementById('aiModal').classList.remove('open'); }
+document.getElementById('aiStudioBtn').addEventListener('click', openAi);
+document.getElementById('closeAiBtn').addEventListener('click', closeAi);
+document.getElementById('aiModal').addEventListener('click', e=>{ if(e.target.id==='aiModal') closeAi(); });
+
+async function runStudioAI(mode){
+  if(!psd){ document.getElementById('aiOut').textContent='Open a template first.'; return; }
+  const out=document.getElementById('aiOut');
+  out.textContent='Thinking over your canvas…';
+  render(true);
+  const blob = await new Promise(res=>canvas.toBlob(res,'image/jpeg',0.82));
+  render();
+  const fd=new FormData();
+  fd.append('preview', blob, 'preview.jpg');
+  fd.append('mode', mode);
+  fd.append('prompt', document.getElementById('aiPrompt').value || '');
+  fd.append('layers', JSON.stringify(flatLayers.slice(0,40).map(({layer})=>({name:layer.name, text:!!layer.text, hidden:!!layer.hidden}))));
+  try{
+    const r=await fetch('/api/studio/ai',{method:'POST', body:fd});
+    const j=await r.json();
+    if(j.refused){ out.textContent='Refused: '+(j.message||'not allowed'); return; }
+    if(!j.ok){ out.textContent=(j.message||j.error||'AI unavailable'); return; }
+    const lines=[];
+    if(j.summary) lines.push(j.summary,'');
+    if(j.copy){ lines.push('Copy', JSON.stringify(j.copy,null,2)); }
+    if(j.fillValues){
+      lines.push('','Suggested fills');
+      Object.entries(j.fillValues).forEach(([k,v])=>{
+        if(!v) return;
+        lines.push(k+': '+v);
+        const tok='{{'+k.toUpperCase()+'}}';
+        flatLayers.forEach(({layer})=>{
+          if(layer.text && String(layer.text.text||'').includes(tok)){
+            document.getElementById('txtContent') && (selected && selected.layer===layer);
+            layer.text.text = String(v);
+          }
+        });
+      });
+    }
+    if(j.placeholders?.length){ lines.push('','Placeholders found'); j.placeholders.forEach(p=>lines.push((p.token||'')+' — '+(p.note||p.layer||''))); }
+    if(j.suggestedEdits?.length){ lines.push('','Edits'); j.suggestedEdits.forEach(e=>lines.push('• '+(e.action||'')+': '+(e.detail||e.target||''))); }
+    if(j.tips?.length){ lines.push('','Tips'); j.tips.forEach(t=>lines.push('• '+t)); }
+    if(j.filters){
+      const f=j.filters;
+      const b=1+(Number(f.brightness)||0)/100;
+      const c=1+(Number(f.contrast)||0)/100;
+      const s=1+(Number(f.saturate)||0)/100;
+      canvas.style.filter=`brightness(${b}) contrast(${c}) saturate(${s})`;
+    }
+    out.textContent=lines.join('\n') || JSON.stringify(j,null,2);
+    buildLayerList(); render();
+  }catch(err){ out.textContent='Network: '+err.message; }
+}
+
+document.addEventListener('keydown', e=>{
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){ e.preventDefault(); undoEdit(); }
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='e'){ e.preventDefault(); exportPNG(); }
+  if(e.key===']') zoomBy(0.1);
+  if(e.key==='[') zoomBy(-0.1);
+});
+
+const _origApply = applyText;
+applyText = function(){ snapshot(); _origApply(); };
+
 console.log('Editor ready. ag-psd available:', !!(window.AgPsd || window.agPsd || window.ag_psd));
 </script>
 </body>
