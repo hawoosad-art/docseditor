@@ -8,9 +8,10 @@ const sharp = require('sharp');
 function aiDisabled() { return process.env.CARD_AI_DISABLE === '1'; }
 function aiConfigured() { return !!(process.env.OPENAI_API_KEY) && !aiDisabled(); }
 
-function client() {
-  if (!process.env.OPENAI_API_KEY || aiDisabled()) return null;
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function client(overrideKey) {
+  const key = String(overrideKey || process.env.OPENAI_API_KEY || '').trim();
+  if (!key || aiDisabled()) return null;
+  return new OpenAI({ apiKey: key });
 }
 
 const FORBIDDEN = /passport|driver.?licen[cs]e|national.?id|government.?id|visa\b|green.?card|social.?security|birth.?cert|official.?id|forged|counterfeit/i;
@@ -30,7 +31,7 @@ async function shrinkPreview(pngOrJpeg) {
     .toBuffer();
 }
 
-async function studioAsk({ imageBuffer, prompt, layers, mode }) {
+async function studioAsk({ imageBuffer, prompt, layers, mode, apiKey }) {
   if (FORBIDDEN.test(String(prompt || '')) || FORBIDDEN.test(String(mode || ''))) {
     return {
       ok: false,
@@ -38,9 +39,9 @@ async function studioAsk({ imageBuffer, prompt, layers, mode }) {
       message: 'This studio will not edit official identity documents. Use a fictional membership or event badge instead.',
     };
   }
-  const ai = client();
+  const ai = client(apiKey);
   if (!ai) {
-    return { ok: false, code: 'AI_UNAVAILABLE', message: 'Set OPENAI_API_KEY on the server to unlock Studio AI.' };
+    return { ok: false, code: 'AI_UNAVAILABLE', message: 'Add an OpenAI API key in Studio (or set OPENAI_API_KEY on the server). A GitHub token will not work.' };
   }
 
   const preview = await shrinkPreview(imageBuffer);

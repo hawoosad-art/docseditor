@@ -1227,6 +1227,7 @@ app.post('/api/studio/ai', studioLimiter, studioUpload.single('preview'), async 
       prompt: req.body.prompt || '',
       mode: req.body.mode || 'direct',
       layers,
+      apiKey: req.body.apiKey || req.headers['x-openai-key'] || '',
     });
     const status = result.refused ? 400 : (result.ok ? 200 : (result.code === 'AI_UNAVAILABLE' ? 503 : 422));
     return res.status(status).json(result);
